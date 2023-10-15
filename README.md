@@ -5,6 +5,7 @@
 -  [minkowsiki](https://github.com/NVIDIA/MinkowskiEngine) with cuda 11.x
 -  pytorch_metric_learning 1.6.3
 -  dgl with cuda
+-  wandb
 
 ## Train and eval
 -   Modify root_dir in every file
@@ -15,7 +16,7 @@
 -   cd eval (for eval feature extraction model)
 -     run "python evaluate.py --config ../config/config_baseline_multimodal.txt --model_config ../models/minklocmultimodal.txt --weights <weights file>"
 -  cd train_gnn (for gnn model)
--      python gnn_fine.py      
+-      python gnn_fine_wandb.py      
 
    -  modify models/minkloc3d, `model`:
       -   `MinkLocMultimodal` for rgb + pointcloud
@@ -79,6 +80,7 @@ The following Python packages are required:
 * pytorch_metric_learning (version 1.0 or above)
 * tensorboard
 * colour_demosaicing
+* wandb
 
 
 Modify the `PYTHONPATH` environment variable to include absolute path to the project root folder: 
