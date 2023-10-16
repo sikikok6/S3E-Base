@@ -678,7 +678,48 @@ def cal_trans_rot_error(pred_pose, gt_pose):
 
     return translation_error, rotation_error_deg
 
+def quat_to_euler(q, is_degree=False):
+    x, y, z ,w = q[0], q[1], q[2], q[3]
 
+    t0 = +2.0 * (w * x + y * z)
+    t1 = +1.0 - 2.0 * (x * x + y * y)
+    roll = np.arctan2(t0, t1)
+
+    t2 = +2.0 * (w * y - z * x)
+    t2 = +1.0 if t2 > +1.0 else t2
+    t2 = -1.0 if t2 < -1.0 else t2
+    pitch = np.arcsin(t2)
+
+    t3 = +2.0 * (w * z + x * y)
+    t4 = +1.0 - 2.0 * (y * y + z * z)
+    yaw = np.arctan2(t3, t4)
+
+    if is_degree:
+        roll = np.rad2deg(roll)
+        pitch = np.rad2deg(pitch)
+        yaw = np.rad2deg(yaw)
+
+    return np.array([roll, pitch, yaw])
+
+def cal_trans_rot_errorv1(pred_pose, gt_pose):
+    """
+    Calculate both translation and rotation errors between two poses.
+    :param pred_pose: Predicted pose as [tx, ty, tz, qx, qy, qz, qw]
+    :param gt_pose: Ground truth pose as [tx, ty, tz, qx, qy, qz, qw]
+    :return: Translation error and rotation error in degrees
+    """
+    pred_translation = pred_pose[:3]
+    gt_translation = gt_pose[:3]
+    translation_error = np.linalg.norm(pred_translation - gt_translation, 2)
+
+    pred_eulder = quat_to_euler(pred_pose[3:],is_degree=True)
+    gt_eulder = quat_to_euler(gt_pose[3:],is_degree=True)
+    rotation_error_deg = np.linalg.norm(pred_eulder - gt_eulder, 2)
+
+    print(f"translation_error:{translation_error}")
+    print(f"rotation_error_deg:{rotation_error_deg}")
+
+    return translation_error, rotation_error_deg
 # def generate_test_poses(scene):
 #     file_path = '/home/ubuntu-user/S3E-backup/datasetfiles/datasets/fire/{}/pointcloud_4096'.format(scene)
 #     file_li = os.listdir(file_path)

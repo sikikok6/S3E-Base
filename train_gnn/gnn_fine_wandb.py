@@ -8,7 +8,7 @@ import torch.nn as nn
 import torch
 import numpy as np
 import tqdm
-from gnn_utils import load_minkLoc_model, make_dataloader, myGNN, get_embeddings_3d, get_embeddings, get_poses, cal_trans_rot_error
+from gnn_utils import load_minkLoc_model, make_dataloader, myGNN, get_embeddings_3d, get_embeddings, get_poses, cal_trans_rot_errorv1
 import os
 import argparse
 
@@ -441,7 +441,7 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                         test_pred_pose = np.hstack(
                             (test_pos_pred.cpu().numpy(), test_ori_pred.cpu().numpy()))
 
-                        trans_error, rot_error = cal_trans_rot_error(
+                        trans_error, rot_error = cal_trans_rot_errorv1(
                             test_pred_pose, test_gt_pose.cpu().numpy())
                         
                         val_loss_dic['pos_error'].append(trans_error)
