@@ -39,6 +39,8 @@ project_args = parser.parse_args()
 current_time = datetime.datetime.now()
 time_string = current_time.strftime("%m%d_%H%M")
 
+run = wandb.init(project="SE3-Backup-V3-Model",
+                 name="Exp_"+time_string +"fineloss")
 
 config = os.path.join(project_args.project_dir, project_args.config_file)
 model_config = os.path.join(project_args.project_dir, project_args.model_file)
@@ -270,25 +272,42 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                     loss_pos = F.mse_loss(pos_pred, pos_true)
                     loss_ori = F.mse_loss(ori_pred, ori_true)
 
-                    # alpha for mse1
-                    alpha = 30
-                    # beta for ori
+
+                    #delta for ap
+                    delta = 1
+
+                    #alpha for mse1
+                    alpha = 1
+                    #beta for ori
                     beta = 500
-                    # gamma for pos and ori
+                    #cardi for pos
+                    cardi = 10
+                    #gamma for pos and ori
                     gamma = 1
 
                     train_loss_ap = 1 - (0.7*ap_coarse + 0.3*ap_fine)
+
                     train_loss_mse1 = loss_affinity_1
-                    train_loss_pos = loss_pos
-                    # Here have beta
+                    #Here have cardi
+                    train_loss_pos = cardi * loss_pos
+                    #Here have beta
                     train_loss_ori = beta * loss_ori
+
                     train_loss_pos_ori = train_loss_pos + train_loss_ori
 
                     # losses.append(
                     #     1 - (0.7*ap_coarse + 0.3*ap_fine) + (30 * loss_affinity_1))
 
-                    losses.append(train_loss_ap + alpha *
-                                  train_loss_mse1 + gamma * train_loss_pos_ori)
+                    losses.append(delta * train_loss_ap + 
+                                  alpha * train_loss_mse1 + 
+                                  gamma * train_loss_pos_ori)
+                    
+                    train_loss_dic['ap'].append(delta*train_loss_ap.item())
+                    train_loss_dic['mse1'].append(alpha * train_loss_mse1.item())
+                    train_loss_dic['pos'].append(train_loss_pos.item())
+                    train_loss_dic['ori'].append(train_loss_ori.item())
+                    train_loss_dic['pos_ori'].append(gamma * train_loss_pos_ori.item())
+                    
 
                     train_loss_dic['ap'].append(train_loss_ap.item())
                     train_loss_dic['mse1'].append(

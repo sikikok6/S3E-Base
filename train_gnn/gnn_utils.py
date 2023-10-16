@@ -149,9 +149,9 @@ class myGNN(nn.Module):
         self.Encoder = nn.Sequential(nn.Linear(in_feats+7, 2*in_feats),
                                      nn.ReLU()
                                      )
-
-        self.Decoder = nn.Sequential(nn.Linear(2*in_feats, in_feats+7),
-                                     nn.Tanh())
+        
+        self.Decoder = nn.Sequential(nn.Linear(2*in_feats,7))
+        
 
     def apply_edges(self, edges):
         h_u = edges.src['x']
@@ -173,20 +173,19 @@ class myGNN(nn.Module):
 
         A = self.conv1(g, x, e)
 
-        A = self.Decoder(A)
+        A = F.leaky_relu(A)
+        A = F.normalize(A, dim=1)
 
-        est_pose = A[0, 512:]
-
+        est_pose = self.Decoder(A[0])
         pos_out = est_pose[:3]
         ori_out = est_pose[3:]
 
-        A = A[:, :512]
-
-        A = F.leaky_relu(A)
-
-        A = F.normalize(A, dim=1)
+        # A = A[:,:512]
+        # A = F.leaky_relu(A)
+        # A = F.normalize(A, dim=1)
         # pred2, A2 = self.conv2(g, pred)
-        return A, e, pos_out, ori_out
+
+        return A, e , pos_out,ori_out
 
 
 class ListDict(object):

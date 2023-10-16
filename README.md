@@ -9,8 +9,7 @@
 
 ## Train and eval
 -   Modify root_dir in every file
--     run "export PYTHONPATH=$PYTHONPATH:/home/ubuntu-user/S3E-backup
-"
+-     run "export PYTHONPATH=$PYTHONPATH:/home/ubuntu-user/S3E-backup"
 -   cd training (for train feature extraction model)
 -     run "python train.py --config ../config/config_baseline_multimodal.txt --model_config ../models/minkloc3d.txt" for training
 -   cd eval (for eval feature extraction model)
