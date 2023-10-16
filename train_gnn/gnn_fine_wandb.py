@@ -391,6 +391,12 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                 trans_loss = 0
                 rotation_loss = 0
 
+                val_loss_dic = {}
+                val_loss_dic['pos'] = []
+                val_loss_dic['ori'] = []
+                val_loss_dic['pos_error'] = []
+                val_loss_dic['ori_error'] = []
+
                 src = np.array(
                     list(range(1, 51 * (51 - 1) + 1)))
                 dst = np.repeat(
@@ -428,18 +434,19 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                         loss_pos = F.mse_loss(test_pos_pred, test_pos_true)
                         loss_ori = F.mse_loss(test_ori_pred, test_ori_true)
 
-                        test_pos_pred, test_ori_pred
+                        val_loss_dic['pos'].append(loss_pos.item())
+                        val_loss_dic['ori'].append(loss_ori.item())
+                        
 
                         test_pred_pose = np.hstack(
                             (test_pos_pred.cpu().numpy(), test_ori_pred.cpu().numpy()))
 
                         trans_error, rot_error = cal_trans_rot_error(
                             test_pred_pose, test_gt_pose.cpu().numpy())
+                        
+                        val_loss_dic['pos_error'].append(trans_error)
+                        val_loss_dic['ori_error'].append(rot_error)
 
-                        t_loss += loss_pos.item() + beta * loss_ori.item()
-
-                        trans_loss += trans_error
-                        rotation_loss += rot_error
 
                         database_embeddings = A[1:len(labels)]
 
@@ -473,20 +480,29 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                                     top1_similarity_score.append(similarity)
                                 recall[j - flag] += 1
                                 break
-
+                    
+                    val_sum_dict = {}
+                    for key, value in val_loss_dic.items():
+                        total_sum = sum(value)
+                        val_sum_dict[key] = total_sum
                     evanums = tbar3.n
+                    
                     # t_loss = t_loss.detach().cpu().numpy()
-                    print(f"Val_poss_loss:{t_loss/evanums}")
+                    print(f"val_pos_loss:{val_sum_dict['pos']/evanums}")
                     wandb.log(
-                        {'Val_Avg_Poss_Loss': t_loss/evanums}, step=epoch)
+                        {'val_pos_loss': val_sum_dict['pos']/evanums}, step=epoch)
+                    
+                    print(f"val_ori_loss:{val_sum_dict['ori']/evanums}")
+                    wandb.log(
+                        {'val_ori_loss': val_sum_dict['ori']/evanums}, step=epoch)
 
-                    print(f"Val_trans_loss:{trans_loss/evanums}")
+                    print(f"val_trans_error:{val_sum_dict['pos_error']/evanums}")
                     wandb.log(
-                        {'Val_trans_loss': trans_loss/evanums}, step=epoch)
+                        {'val_trans_error': val_sum_dict['pos_error']/evanums}, step=epoch)
 
-                    print(f"Val_rotation_loss:{rotation_loss/evanums}")
+                    print(f"val_rotation_error:{val_sum_dict['ori_error']/evanums}")
                     wandb.log(
-                        {'Val_rotation_loss': rotation_loss/evanums}, step=epoch)
+                        {'val_rotation_error': val_sum_dict['ori_error']/evanums}, step=epoch)
 
                     # one_percent_recall = (one_percent_retrieved/float(num_evaluated))*100
                     recall = (np.cumsum(recall)/float(num_evaluated))*100
@@ -495,7 +511,7 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
 
                     print('max:', max_)
                     wandb.log(
-                        {'Val_Recall_Max': max_}, step=epoch)
+                        {'val_recall_Max': max_}, step=epoch)
                     # print(gt_iou.view(-1,)[:len(pos_mask[0])])
 
         tbar.set_postfix({'train loss': loss/float(count)})
