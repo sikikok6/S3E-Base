@@ -716,8 +716,8 @@ def cal_trans_rot_errorv1(pred_pose, gt_pose):
     gt_eulder = quat_to_euler(gt_pose[3:],is_degree=True)
     rotation_error_deg = np.linalg.norm(pred_eulder - gt_eulder, 2)
 
-    print(f"translation_error:{translation_error}")
-    print(f"rotation_error_deg:{rotation_error_deg}")
+    #print(f"translation_error:{translation_error}")
+    #print(f"rotation_error_deg:{rotation_error_deg}")
 
     return translation_error, rotation_error_deg
 # def generate_test_poses(scene):
