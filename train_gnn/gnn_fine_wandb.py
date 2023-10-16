@@ -1,31 +1,62 @@
-import tqdm
-import numpy as np
-import torch
-import torch.nn as nn
-import pickle
-import dgl
-from loss import SmoothAP, C2F
-
-import torch.nn.functional as F
-
-import wandb
-
 import datetime
+import wandb
+import torch.nn.functional as F
+from loss import SmoothAP, C2F
+import dgl
+import pickle
+import torch.nn as nn
+import torch
+import numpy as np
+import tqdm
+from gnn_utils import load_minkLoc_model, make_dataloader, myGNN, get_embeddings_3d, get_embeddings, get_poses, cal_trans_rot_error
+import os
+import argparse
+
+parser = argparse.ArgumentParser(description="gnn fine project")
+
+parser.add_argument('-p', '--project_dir', type=str,
+                    help='project dir', default='/home/ubuntu-user/S3E-backup')
+
+parser.add_argument('-d', '--dataset_dir', type=str,
+                    help='datasets dir', default='/home/ubuntu-user/S3E-backup/datasetfiles/datasets')
+
+parser.add_argument('-c', '--config_file', type=str,
+                    help='config file dir', default='config/config_baseline_multimodal.txt')
+
+parser.add_argument('-m', '--model_file', type=str,
+                    help='model file dir', default='models/minkloc3d.txt')
+
+parser.add_argument('-pw', '--pcl_weights', type=str,
+                    help='pcl_weights dir', default='weights_pcl/model_MinkFPN_GeM_20230515_1254fire_max_66.5.pth')
+
+parser.add_argument('-rw', '--rgb_weights', type=str,
+                    help='rgb_weights dir', default='weights_rgb/fire_rgb_best_weight/model_MinkLocRGB_20230515_05004_epoch_current_recall79.2_best.pth')
+
+parser.add_argument('-s', '--scene', type=str,
+                    help='scene name', default='fire')
+project_args = parser.parse_args()
+
 current_time = datetime.datetime.now()
 time_string = current_time.strftime("%m%d_%H%M")
 
+
+config = os.path.join(project_args.project_dir, project_args.config_file)
+model_config = os.path.join(project_args.project_dir, project_args.model_file)
+rgb_weights = os.path.join(project_args.dataset_dir, project_args.rgb_weights)
+pcl_weights = os.path.join(project_args.dataset_dir, project_args.pcl_weights)
+
+print("config: ", config)
+print("model config: ", model_config)
+print("rgb weights: ", rgb_weights)
+print("pcl weights: ", pcl_weights)
+
 run = wandb.init(project="SE3-Backup-V2-Model",
-                 name="Exp_"+time_string +"fineloss")
+                 name="Exp_"+time_string + "fineloss")
 
-
-
-from gnn_utils import load_minkLoc_model, make_dataloader, myGNN, get_embeddings_3d, get_embeddings,get_poses,cal_trans_rot_error
-print("HELLO")
-
-config = '/home/ubuntu-user/S3E-backup/config/config_baseline_multimodal.txt'
-model_config = '//home/ubuntu-user/S3E-backup/models/minkloc3d.txt'
-pcl_weights = '/home/ubuntu-user/S3E-backup/datasetfiles/datasets/weights_pcl/model_MinkFPN_GeM_20230515_1254fire_max_66.5.pth'
-rgb_weights = '/home/ubuntu-user/S3E-backup/datasetfiles/datasets/weights_rgb/fire_rgb_best_weight/model_MinkLocRGB_20230515_05004_epoch_current_recall79.2_best.pth'
+# config = '/home/ubuntu-user/S3E-backup/config/config_baseline_multimodal.txt'
+# model_config = '//home/ubuntu-user/S3E-backup/models/minkloc3d.txt'
+# pcl_weights = '/home/ubuntu-user/S3E-backup/datasetfiles/datasets/weights_pcl/model_MinkFPN_GeM_20230515_1254fire_max_66.5.pth'
+# rgb_weights = '/home/ubuntu-user/S3E-backup/datasetfiles/datasets/weights_rgb/fire_rgb_best_weight/model_MinkLocRGB_20230515_05004_epoch_current_recall79.2_best.pth'
 
 
 if torch.cuda.is_available():
@@ -36,44 +67,59 @@ print('Device: {}'.format(device))
 
 
 # # load minkloc
-mink_model, params = load_minkLoc_model(config, model_config, pcl_weights, rgb_weights)
+mink_model, params = load_minkLoc_model(
+    config, model_config, pcl_weights, rgb_weights, project_args)
 mink_model.to(device)
 
 '''If Not Save,Run'''
-# embs = np.array(get_embeddings_3d(mink_model, params,'cuda','train'))
+# embs = np.array(get_embeddings_3d(
+#     mink_model, params, project_args, 'cuda', 'train'))
 # np.save('./gnn_pre_train_embeddings.npy', embs)
-# test_embs = np.array(get_embeddings_3d(mink_model, params,'cuda', 'test'))
-# np.save( './gnn_pre_test_embeddings.npy', test_embs)
+# test_embs = np.array(get_embeddings_3d(
+#     mink_model, params, project_args, 'cuda', 'test'))
+# np.save('./gnn_pre_test_embeddings.npy', test_embs)
 
 
 # load dataloaders
-dataloaders = make_dataloader(params)
+dataloaders = make_dataloader(params, project_args)
 
+
+evaluate_database_pickle = os.path.join(project_args.dataset_dir, project_args.scene,
+                                        'pickle', project_args.scene+'_evaluation_database.pickle')
+evaluate_query_pickle = os.path.join(project_args.dataset_dir, project_args.scene,
+                                     'pickle', project_args.scene+'_evaluation_query.pickle')
 
 # load evaluate file
 # with open('/home/graham/datasets/fire/pickle/fire_evaluation_database.pickle', 'rb') as f:
-with open('/home/ubuntu-user/S3E-backup/datasetfiles/datasets/fire/pickle/fire_evaluation_database.pickle', 'rb') as f:
+with open(evaluate_database_pickle, 'rb') as f:
     database = pickle.load(f)
 
 # with open('/home/graham/datasets/fire/pickle/fire_evaluation_query.pickle', 'rb') as f:
-with open('/home/ubuntu-user/S3E-backup/datasetfiles/datasets/fire/pickle/fire_evaluation_query.pickle', 'rb') as f:
+with open(evaluate_query_pickle, 'rb') as f:
     query = pickle.load(f)
 
+train_iou_file = os.path.join(
+    project_args.dataset_dir, 'iou_', "train_" + project_args.scene + "_iou.npy")
+test_iou_file = os.path.join(
+    project_args.dataset_dir, 'iou_', "test_" + project_args.scene + "_iou.npy")
 
 iou = torch.tensor(
-    np.load('/home/ubuntu-user/S3E-backup/datasetfiles/datasets/iou_/train_fire_iou.npy'), dtype=torch.float)
+    np.load(train_iou_file), dtype=torch.float)
 # iou = torch.tensor(iou / np.linalg.norm(iou, axis=1, keepdims=True))
-test_iou = np.load('/home/ubuntu-user/S3E-backup/datasetfiles/datasets/iou_/test_fire_iou.npy')
+test_iou = torch.tensor(np.load(test_iou_file), dtype=torch.float)
 # test_iou = torch.tensor(
 #     test_iou / np.linalg.norm(test_iou, axis=1, keepdims=True))
 
+train_overlap = os.path.join(project_args.dataset_dir, project_args.scene,
+                             'pickle', project_args.scene+'_train_overlap.pickle')
+test_overlap = os.path.join(project_args.dataset_dir, project_args.scene,
+                            'pickle', project_args.scene+'_test_overlap.pickle')
 
 # load iou file
-# with open('/home/graham/datasets/fire/pickle/train_iou.pickle', 'rb+') as f:
-with open('/home/ubuntu-user/S3E-backup/datasetfiles/datasets/fire/pickle/fire_train_overlap.pickle', 'rb') as f:
+with open(train_overlap, 'rb') as f:
     train_iou = pickle.load(f)
 
-with open('/home/ubuntu-user/S3E-backup/datasetfiles/datasets/fire/pickle/fire_test_overlap.pickle', 'rb') as f:
+with open(test_overlap, 'rb') as f:
     test_iou = pickle.load(f)
 
 
@@ -89,12 +135,11 @@ for i in train_iou:
         gt[i][p] = 1.
 
 
-
 if params.model_params.model == "MinkLocMultimodal":
     in_feats = 512
 else:
     in_feats = 256
-#for save model
+# for save model
 model_path = './savemodel/'+time_string+'_my_dgl_model.pt'
 
 model = myGNN(in_feats, 256, 128)
@@ -105,15 +150,15 @@ opt = torch.optim.Adam(
 loss = None
 recall = None
 smoothap = SmoothAP()
-#c2f = C2F()
+# c2f = C2F()
 d = {'loss': loss}
 
 
 embs = np.load('./gnn_pre_train_embeddings.npy')
-pose_embs = get_poses("train")
+pose_embs = get_poses("train", project_args)
 
 test_embs = np.load('./gnn_pre_test_embeddings.npy')
-test_pose_embs  = get_poses("test")
+test_pose_embs = get_poses("test", project_args)
 print(len(test_embs))
 # embs = np.hstack((embs, embs))
 # test_embs = np.hstack((test_embs, test_embs))
@@ -126,9 +171,9 @@ query_embs = query_embs.to('cuda')
 
 
 embs = torch.tensor(embs).to('cuda')
-#Add Here For Pose
-pose_embs = torch.tensor(pose_embs,dtype=torch.float32).to('cuda')
-test_pose_embs = torch.tensor(test_pose_embs,dtype=torch.float32).to('cuda')
+# Add Here For Pose
+pose_embs = torch.tensor(pose_embs, dtype=torch.float32).to('cuda')
+test_pose_embs = torch.tensor(test_pose_embs, dtype=torch.float32).to('cuda')
 
 criterion = nn.MSELoss().to('cuda')
 
@@ -178,17 +223,17 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
 
                     '''Key Here To Change Poses For Query'''
                     ind_pose = ind.copy()
-                    ind_pose[0]=ind_pose[1]
-                    pose_embeddings =  pose_embs[ind_pose]
+                    ind_pose[0] = ind_pose[1]
+                    pose_embeddings = pose_embs[ind_pose]
 
                     indx = torch.tensor(ind).view((-1,))[dst[:len(labels) - 1]]
                     indy = torch.tensor(ind)[src[:len(labels) - 1]]
-                    #embeddings = embs[ind]
-                    embeddings = torch.cat((embs[ind],pose_embeddings),dim=1)
+                    # embeddings = embs[ind]
+                    embeddings = torch.cat((embs[ind], pose_embeddings), dim=1)
                     gt_iou = gt[indx, indy].view((-1, 1))
                     gt_iou_ = iou[indx, indy].view((-1, 1)).cuda()
 
-                    A, e ,pos_pred,ori_pred = model(g, embeddings)
+                    A, e, pos_pred, ori_pred = model(g, embeddings)
 
                     query_embeddings = torch.repeat_interleave(
                         A[0].unsqueeze(0), len(labels) - 1, 0)
@@ -214,53 +259,49 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                     ap_coarse = smoothap(sim_mat, pos_mask)
                     ap_fine = smoothap(hard_sim_mat, hard_p_mask)
 
-                    #calculate poss loss
+                    # calculate poss loss
                     gt_pose = pose_embs[labels[0]]
                     pos_true = gt_pose[:3]
                     ori_true = gt_pose[3:]
 
-                    
                     ori_pred = F.normalize(ori_pred, p=2, dim=0)
                     ori_true = F.normalize(ori_true, p=2, dim=0)
 
                     loss_pos = F.mse_loss(pos_pred, pos_true)
                     loss_ori = F.mse_loss(ori_pred, ori_true)
 
-
-
-
-                    #alpha for mse1
+                    # alpha for mse1
                     alpha = 30
-                    #beta for ori
+                    # beta for ori
                     beta = 500
-                    #gamma for pos and ori
+                    # gamma for pos and ori
                     gamma = 1
-
 
                     train_loss_ap = 1 - (0.7*ap_coarse + 0.3*ap_fine)
                     train_loss_mse1 = loss_affinity_1
                     train_loss_pos = loss_pos
-                    #Here have beta
+                    # Here have beta
                     train_loss_ori = beta * loss_ori
                     train_loss_pos_ori = train_loss_pos + train_loss_ori
 
                     # losses.append(
                     #     1 - (0.7*ap_coarse + 0.3*ap_fine) + (30 * loss_affinity_1))
 
-                    losses.append(train_loss_ap + alpha * train_loss_mse1 + gamma * train_loss_pos_ori)
-                    
+                    losses.append(train_loss_ap + alpha *
+                                  train_loss_mse1 + gamma * train_loss_pos_ori)
+
                     train_loss_dic['ap'].append(train_loss_ap.item())
-                    train_loss_dic['mse1'].append(alpha * train_loss_mse1.item())
+                    train_loss_dic['mse1'].append(
+                        alpha * train_loss_mse1.item())
                     train_loss_dic['pos'] = [train_loss_pos.item()]
                     train_loss_dic['ori'] = [beta * train_loss_ori.item()]
-                    train_loss_dic['pos_ori'] = [gamma * train_loss_pos_ori.item()]
-                    
-
+                    train_loss_dic['pos_ori'] = [
+                        gamma * train_loss_pos_ori.item()]
 
                     # c2f(sim_mat, pos_mask, neg_mask, hard_pos_mask, gt_iou_)
 
-                        # c2f(sim_mat, database_sim_mat, pos_mask, hard_pos_mask,
-                        #     neg_mask,  gt_iou_)
+                    # c2f(sim_mat, database_sim_mat, pos_mask, hard_pos_mask,
+                    #     neg_mask,  gt_iou_)
                     # + loss_affinity_1)
                     # losses.append(
                     #     smoothap(sim_mat, pos_mask) + loss_affinity_1)
@@ -288,37 +329,36 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                             recall[j - flag] += 1
                             break
             # tbar2.set_postfix({'loss': loss_smoothap.item()})
-            #print(loss / cnt)
+            # print(loss / cnt)
             count = tbar2.n
-            #print(f"cnt is {cnt},count is {count}")
+            # print(f"cnt is {cnt},count is {count}")
             sum_dict = {}
             for key, value in train_loss_dic.items():
                 total_sum = sum(value)
                 sum_dict[key] = total_sum
 
             print(f"Epoch {epoch}:Ap_Loss:{sum_dict['ap']/float(count)}")
-            wandb.log({'Ap_Loss':sum_dict['ap']/float(count)},step=epoch)
+            wandb.log({'Ap_Loss': sum_dict['ap']/float(count)}, step=epoch)
 
             print(f"Epoch {epoch}:Mse1_Loss:{sum_dict['mse1']/float(count)}")
-            wandb.log({'Mse1_Loss':sum_dict['mse1']/float(count)},step=epoch)
+            wandb.log({'Mse1_Loss': sum_dict['mse1']/float(count)}, step=epoch)
 
             print(f"Epoch {epoch}:Pos_Loss:{sum_dict['pos']/float(count)}")
-            wandb.log({'Pos_Loss':sum_dict['pos']/float(count)},step=epoch)
+            wandb.log({'Pos_Loss': sum_dict['pos']/float(count)}, step=epoch)
 
             print(f"Epoch {epoch}:Ori_Loss:{sum_dict['ori']/float(count)}")
-            wandb.log({'Ori_Loss':sum_dict['ori']/float(count)},step=epoch)
+            wandb.log({'Ori_Loss': sum_dict['ori']/float(count)}, step=epoch)
 
-            print(f"Epoch {epoch}:Pos_And_Ori_Loss:{sum_dict['pos_ori']/float(count)}")
-            wandb.log({'Pos_And_Ori_Loss':sum_dict['pos_ori']/float(count)},step=epoch)
+            print(
+                f"Epoch {epoch}:Pos_And_Ori_Loss:{sum_dict['pos_ori']/float(count)}")
+            wandb.log(
+                {'Pos_And_Ori_Loss': sum_dict['pos_ori']/float(count)}, step=epoch)
 
             print(f"Epoch {epoch}:Train_Average_Loss:{loss/float(count)}")
-            wandb.log({'Train_Average_Loss':loss/float(count)},step=epoch)
-
-            
+            wandb.log({'Train_Average_Loss': loss/float(count)}, step=epoch)
 
             recall = (np.cumsum(recall)/float(num_evaluated))*100
             print('train recall\n', recall)
-
 
             with torch.no_grad():
                 recall = [0] * 50
@@ -326,7 +366,6 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                 top1_similarity_score = []
                 one_percent_retrieved = 0
                 threshold = max(int(round(2000/100.0)), 1)
-
 
                 model.eval()
                 t_loss = 0.
@@ -350,17 +389,19 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                         embeddings = torch.vstack(
                             (query_embs[ind[0]], database_embs[ind[1:]]))
                         ind_pose = ind.copy()
-                        ind_pose[0]=ind_pose[1]
+                        ind_pose[0] = ind_pose[1]
 
-                        test_pose_embeddings =  test_pose_embs[ind_pose]
-                        embeddings = torch.cat((embeddings,test_pose_embeddings),dim=1)
+                        test_pose_embeddings = test_pose_embs[ind_pose]
+                        embeddings = torch.cat(
+                            (embeddings, test_pose_embeddings), dim=1)
 
-                        A, e ,test_pos_pred,test_ori_pred = model(g, embeddings)
+                        A, e, test_pos_pred, test_ori_pred = model(
+                            g, embeddings)
 
                         '''Pose Loss Cal'''
                         test_gt_pose = test_pose_embs[labels[0]]
-                        #calculate poss loss
-            
+                        # calculate poss loss
+
                         test_pos_true = test_gt_pose[:3]
                         test_ori_true = test_gt_pose[3:]
                         test_ori_pred = F.normalize(test_ori_pred, p=2, dim=0)
@@ -368,20 +409,18 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                         loss_pos = F.mse_loss(test_pos_pred, test_pos_true)
                         loss_ori = F.mse_loss(test_ori_pred, test_ori_true)
 
-                        test_pos_pred,test_ori_pred
+                        test_pos_pred, test_ori_pred
 
+                        test_pred_pose = np.hstack(
+                            (test_pos_pred.cpu().numpy(), test_ori_pred.cpu().numpy()))
 
-                        
-                        test_pred_pose = np.hstack((test_pos_pred.cpu().numpy(),test_ori_pred.cpu().numpy()))
-                        
-
-                        trans_error,rot_error = cal_trans_rot_error(test_pred_pose,test_gt_pose.cpu().numpy())
+                        trans_error, rot_error = cal_trans_rot_error(
+                            test_pred_pose, test_gt_pose.cpu().numpy())
 
                         t_loss += loss_pos.item() + beta * loss_ori.item()
 
-                        trans_loss+=trans_error
-                        rotation_loss+=rot_error
-                        
+                        trans_loss += trans_error
+                        rotation_loss += rot_error
 
                         database_embeddings = A[1:len(labels)]
 
@@ -416,27 +455,25 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                                 recall[j - flag] += 1
                                 break
 
-                        
-                        
-                    evanums  = tbar3.n
-                    #t_loss = t_loss.detach().cpu().numpy()
+                    evanums = tbar3.n
+                    # t_loss = t_loss.detach().cpu().numpy()
                     print(f"Val_poss_loss:{t_loss/evanums}")
-                    wandb.log({'Val_Avg_Poss_Loss':t_loss/evanums},step=epoch)
+                    wandb.log(
+                        {'Val_Avg_Poss_Loss': t_loss/evanums}, step=epoch)
 
                     print(f"Val_trans_loss:{trans_loss/evanums}")
-                    wandb.log({'Val_trans_loss':trans_loss/evanums},step=epoch)
+                    wandb.log(
+                        {'Val_trans_loss': trans_loss/evanums}, step=epoch)
 
                     print(f"Val_rotation_loss:{rotation_loss/evanums}")
-                    wandb.log({'Val_rotation_loss':rotation_loss/evanums},step=epoch)
-
-                    
-                    
+                    wandb.log(
+                        {'Val_rotation_loss': rotation_loss/evanums}, step=epoch)
 
                     # one_percent_recall = (one_percent_retrieved/float(num_evaluated))*100
                     recall = (np.cumsum(recall)/float(num_evaluated))*100
                     max_ = max(max_, recall[0])
                     print('recall\n', recall)
-                    
+
                     print('max:', max_)
                     # print(gt_iou.view(-1,)[:len(pos_mask[0])])
 
@@ -444,4 +481,4 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
 
 print("save model:")
 model = model.to('cpu')
-torch.save(model.state_dict(),model_path)
+torch.save(model.state_dict(), model_path)

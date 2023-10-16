@@ -35,7 +35,7 @@ class ScanNetDataset(Dataset):
         self.set_transform = set_transform
         self.queries: Dict[int, TrainingTuple] = pickle.load(
             open(self.query_filepath, 'rb'))
-        self.image_path = image_path
+        self.image_path = os.path.join(self.dataset_path, 'color')
         self.lidar2image_ndx_path = lidar2image_ndx_path
         self.image_transform = image_transform
         self.n_points = 4096    # pointclouds in the dataset are downsampled to 4096 points
@@ -57,7 +57,7 @@ class ScanNetDataset(Dataset):
                 return 2000
             else:
                 return 1000
-        #return len(self.queries) if 'test' not in self.query_filepath else 2000
+        # return len(self.queries) if 'test' not in self.query_filepath else 2000
 
     def __getitem__(self, ndx):
         # Load point cloud and apply transform
@@ -73,8 +73,10 @@ class ScanNetDataset(Dataset):
         #     result['cloud'] = query_pc
 
         if self.image_path is not None:
-            img = image4lidar(filename, self.image_path,
-                              self.image_ext, self.lidar2image_ndx, k=None)
+            # img = image4lidar(filename, self.image_path,
+            #                   self.image_ext, self.lidar2image_ndx, k=None)
+            img = Image.open(os.path.join(
+                self.image_path, filename.split('/')[-1].replace('bin', 'color.png')))
             # if self.image_transform is not None:
             #     img = self.image_transform(img)
             # query_img = Image.open(query_filename).convert('RGB')

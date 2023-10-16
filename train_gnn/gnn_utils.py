@@ -2,6 +2,7 @@ from datasets.augmentation import ValRGBTransform
 from datasets.oxford import image4lidar
 import torch
 import tqdm
+from PIL import Image
 import os
 import copy
 import random
@@ -45,6 +46,7 @@ def calc_gradient_penalty(loss_module, embeddings, e, gt_iou, mask):
     penalty = ((gradients.norm(2, dim=1) - 1)**2).mean()
     return penalty
 
+
 class MLPModel(torch.nn.Module):
 
     def __init__(self, num_i, num_h, num_o):
@@ -69,13 +71,13 @@ class MLPModel(torch.nn.Module):
         return x
 
 
-def load_minkLoc_model(config, model_config, pcl_weights=None, rgb_weights=None):
+def load_minkLoc_model(config, model_config, pcl_weights=None, rgb_weights=None, project_args=None):
     pw = pcl_weights
     rw = rgb_weights
     # print('Weights: {}'.format(w))
     # print('')
 
-    params = MinkLocParams(config, model_config)
+    params = MinkLocParams(config, model_config, project_args)
     # params.print()
 
     if torch.cuda.is_available():
@@ -136,7 +138,6 @@ class MLP(nn.Module):
         return h
 
 
-
 class myGNN(nn.Module):
     def __init__(self, in_feats, h_feats, out_feats):
         super(myGNN, self).__init__()
@@ -145,13 +146,12 @@ class myGNN(nn.Module):
         self.BN = nn.BatchNorm1d(2*in_feats)
         self.conv1 = SAGEConv(2*in_feats, 2*in_feats, 'mean')
 
-        self.Encoder = nn.Sequential(nn.Linear(in_feats+7,2*in_feats),
+        self.Encoder = nn.Sequential(nn.Linear(in_feats+7, 2*in_feats),
                                      nn.ReLU()
                                      )
-        
-        self.Decoder = nn.Sequential(nn.Linear(2*in_feats,in_feats+7),
+
+        self.Decoder = nn.Sequential(nn.Linear(2*in_feats, in_feats+7),
                                      nn.Tanh())
-        
 
     def apply_edges(self, edges):
         h_u = edges.src['x']
@@ -161,7 +161,7 @@ class myGNN(nn.Module):
         return {'score': score}
 
     def forward(self, g, x):
-        
+
         x = self.Encoder(x)
 
         x = self.BN(x)
@@ -172,22 +172,21 @@ class myGNN(nn.Module):
             e = g.edata['score']
 
         A = self.conv1(g, x, e)
-        
+
         A = self.Decoder(A)
 
-        est_pose = A[0,512:]
+        est_pose = A[0, 512:]
 
         pos_out = est_pose[:3]
         ori_out = est_pose[3:]
 
-
-        A = A[:,:512]
+        A = A[:, :512]
 
         A = F.leaky_relu(A)
 
         A = F.normalize(A, dim=1)
         # pred2, A2 = self.conv2(g, pred)
-        return A, e , pos_out,ori_out
+        return A, e, pos_out, ori_out
 
 
 class ListDict(object):
@@ -392,7 +391,7 @@ def make_smoothap_collate_fn(dataset: ScanNetDataset, mink_quantization_size=Non
         most_positives_mask = []
         labels = [e[1] for e in data_list]
 
-        #dataset.queries[labels[0]]
+        # dataset.queries[labels[0]]
 
         if val != 'val':
             labels.extend(train_sim_mat[labels[0]][1:num+1])
@@ -439,16 +438,15 @@ def make_smoothap_collate_fn(dataset: ScanNetDataset, mink_quantization_size=Non
                 neighbours.append(temp)
         return positives_mask, negatives_mask, hard_positives_mask, labels, neighbours, most_positives_mask, None
 
-    
-
     return collate_fn
 
 
-def make_dataloader(params):
+def make_dataloader(params, project_params):
     datasets = {}
-    dataset_folder = '/home/ubuntu-user/S3E-backup/datasetfiles/datasets/fire'
-    train_file = 'pickle/fire_train_overlap.pickle'
-    test_file = 'pickle/fire_test_overlap.pickle'
+    dataset_folder = os.path.join(
+        project_params.dataset_dir, project_params.scene)
+    train_file = 'pickle/' + project_params.scene + '_train_overlap.pickle'
+    test_file = 'pickle/' + project_params.scene + '_test_overlap.pickle'
 
     train_transform = TrainTransform(1)
     train_set_transform = TrainSetTransform(1)
@@ -456,7 +454,8 @@ def make_dataloader(params):
     train_embeddings = np.load('./gnn_pre_train_embeddings.npy')
     test_embeddings = np.load('./gnn_pre_test_embeddings.npy')
 
-    database_len = len(test_embeddings) // 2 if len(test_embeddings) < 4000 else 3000
+    database_len = len(
+        test_embeddings) // 2 if len(test_embeddings) < 4000 else 3000
     database_embeddings = test_embeddings[:database_len]
     query_embeddings = test_embeddings[database_len:]
     global train_sim_mat
@@ -525,7 +524,7 @@ def make_dataloader(params):
     return dataloaders
 
 
-def load_data_item(file_name, params, fp):
+def load_data_item(file_name, params, project_params, fp):
     # returns Nx3 matrix
     file_path = os.path.join(params.dataset_folder, file_name)
 
@@ -543,11 +542,13 @@ def load_data_item(file_name, params, fp):
         # Get the first closest image for each LiDAR scan
         # assert os.path.exists(params.lidar2image_ndx_path), f"Cannot find lidar2image_ndx pickle: {params.lidar2image_ndx_path}"
         # lidar2image_ndx = pickle.load(open(params.lidar2image_ndx_path, 'rb'))
-        lidar2image_ndx = {}
-        for i in range(len(os.listdir(params.dataset_folder))):
-            lidar2image_ndx[i] = [i]
-        img = image4lidar(file_name, params.image_path,
-                          '.color.png', lidar2image_ndx, k=1)
+        # lidar2image_ndx = {}
+        # for i in range(len(os.listdir(params.dataset_folder))):
+        #     lidar2image_ndx[i] = [i]
+        # img = image4lidar(file_name, None,
+        #                   None, None, k=1)
+        img = Image.open(os.path.join(project_params.dataset_dir, project_params.scene,
+                         'color', file_name.replace('bin', 'color.png')))
         transform = ValRGBTransform()
         # Convert to tensor and normalize
         result['image'] = transform(img)
@@ -555,18 +556,19 @@ def load_data_item(file_name, params, fp):
     return result
 
 
-def get_embeddings_3d(model, params, device, scene):
+def get_embeddings_3d(model, params, project_params, device, scene):
 
     model.eval()
     embeddings_l = []
-    file_path = '/home/ubuntu-user/S3E-backup/datasetfiles/datasets/fire/{}/pointcloud_4096'.format(scene)
+    file_path = '{}/{}/{}/pointcloud_4096'.format(
+        project_params.dataset_dir, project_params.scene, scene)
     file_li = os.listdir(file_path)
     file_li.sort()
 
     for elem_ndx in tqdm.tqdm(range(len(file_li))):
 
         x = load_data_item(
-            file_li[max(elem_ndx, 0)], params, file_path)
+            file_li[max(elem_ndx, 0)], params, project_params, file_path)
 
         with torch.no_grad():
             # coords are (n_clouds, num_points, channels) tensor
@@ -596,8 +598,7 @@ def get_embeddings_3d(model, params, device, scene):
 
         embedding = embedding.detach().cpu().numpy()
         embeddings_l.append(embedding)
-        
-    
+
     embeddings = np.vstack(embeddings_l)
     return embeddings
 
@@ -619,8 +620,8 @@ def inverse_poses(poses_in):
     poses_in: 0x7
     poses_out: 4x4
     """
-    poses_out = np.eye(4)  
-    
+    poses_out = np.eye(4)
+
     poses_out[:3, -1] = poses_in[:3]
 
     R_matrix = R.from_quat(poses_in[3:]).as_matrix()
@@ -630,24 +631,26 @@ def inverse_poses(poses_in):
     return poses_out
 
 
-def get_poses(scene):
-    file_path = '/home/ubuntu-user/S3E-backup/datasetfiles/datasets/fire/{}/pointcloud_4096'.format(scene)
+def get_poses(scene, project_params):
+    file_path = '{}/{}/{}/pointcloud_4096'.format(project_params.dataset_dir, project_params.scene,
+                                                  scene)
     file_li = os.listdir(file_path)
     file_li.sort()
-    file_pose = [filename.replace('.bin','.pose.txt') for filename in file_li]
+    file_pose = [filename.replace('.bin', '.pose.txt') for filename in file_li]
     file_pose.sort()
-    file_pose_path = '/home/ubuntu-user/S3E-backup/datasetfiles/datasets/fire/pose/'
+    file_pose_path = file_path.replace('pointcloud_4096', 'pose')
     embeddings_pose_l = []
 
     for elem_ndx in tqdm.tqdm(range(len(file_li))):
-        #add for pose
-        embeddings_pose = np.loadtxt(file_pose_path+file_pose[max(elem_ndx, 0)])
-        #trans pose to 3 + 4
+        # add for pose
+        embeddings_pose = np.loadtxt(os.path.join(
+            file_pose_path, file_pose[max(elem_ndx, 0)]))
+        # trans pose to 3 + 4
         embeddings_pose = process_poses(embeddings_pose)
 
-        #pose
+        # pose
         embeddings_pose_l.append(embeddings_pose)
-    
+
     embeddings_pose = np.vstack(embeddings_pose_l)
 
     return embeddings_pose
@@ -677,7 +680,6 @@ def cal_trans_rot_error(pred_pose, gt_pose):
     return translation_error, rotation_error_deg
 
 
-
 # def generate_test_poses(scene):
 #     file_path = '/home/ubuntu-user/S3E-backup/datasetfiles/datasets/fire/{}/pointcloud_4096'.format(scene)
 #     file_li = os.listdir(file_path)
@@ -692,13 +694,14 @@ def cal_trans_rot_error(pred_pose, gt_pose):
 #         embeddings_pose = np.loadtxt(file_pose_path+file_pose[max(elem_ndx, 0)])[:3].ravel()
 #         #pose
 #         embeddings_pose_l.append(embeddings_pose)
-    
+
 #     embeddings_pose = np.vstack(embeddings_pose_l)
 #     return embeddings_pose
 
 
 def get_embeddings(mink_model, params, device, scene):
-    file_path = '/home/ubuntu-user/S3E-backup/datasetfiles/datasets/fire/{}/pointcloud_4096'.format(scene)
+    file_path = '/home/ubuntu-user/S3E-backup/datasetfiles/datasets/fire/{}/pointcloud_4096'.format(
+        scene)
     file_li = os.listdir(file_path)
     file_li.sort()
     embeddings_l = []

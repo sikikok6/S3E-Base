@@ -38,7 +38,7 @@ class MinkLocParams:
     Params for training MinkLoc models on Oxford dataset
     """
 
-    def __init__(self, params_path, model_params_path=None):
+    def __init__(self, params_path, model_params_path=None, project_params=None):
         """
         Configuration files
         :param path: General configuration file
@@ -57,12 +57,19 @@ class MinkLocParams:
         self.num_points = params.getint('num_points', 4096)
         self.dataset_folder = params.get('dataset_folder')
         self.use_cloud = params.getboolean('use_cloud', True)
+        if project_params != None:
+            self.dataset_folder = os.path.join(
+                project_params.dataset_dir, project_params.scene)
 
         if 'image_path' in params:
             # Train with RGB
             # Evaluate on Oxford only (no images for InHouse datasets)
             self.use_rgb = True
             self.image_path = params.get('image_path')
+            scene = self.dataset_folder.split('/')[-1]
+            if project_params != None:
+                self.image_path = os.path.join(
+                    self.dataset_folder, project_params.scene, 'color')
             if 'lidar2image_ndx_path' not in params:
                 self.lidar2image_ndx_path = os.path.join(
                     self.image_path, 'lidar2image_ndx.pickle')
@@ -72,8 +79,9 @@ class MinkLocParams:
             # self.eval_database_files = ['oxford_evaluation_database.pickle']
             # self.eval_query_files = ['oxford_evaluation_query.pickle']
             self.eval_database_files = [
-                'pickle/fire_evaluation_database.pickle']
-            self.eval_query_files = ['pickle/fire_evaluation_query.pickle']
+                'pickle/'+scene+'_evaluation_database.pickle']
+            self.eval_query_files = ['pickle/' +
+                                     scene+'_evaluation_query.pickle']
         else:
             # LiDAR only training and evaluation
             # Evaluate on Oxford and InHouse datasets
