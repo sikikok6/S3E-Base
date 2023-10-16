@@ -293,10 +293,10 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                     train_loss_dic['ap'].append(train_loss_ap.item())
                     train_loss_dic['mse1'].append(
                         alpha * train_loss_mse1.item())
-                    train_loss_dic['pos'] = [train_loss_pos.item()]
-                    train_loss_dic['ori'] = [beta * train_loss_ori.item()]
-                    train_loss_dic['pos_ori'] = [
-                        gamma * train_loss_pos_ori.item()]
+                    train_loss_dic['pos'].append(train_loss_pos.item())
+                    train_loss_dic['ori'].append(beta * train_loss_ori.item())
+                    train_loss_dic['pos_ori'].append(
+                        gamma * train_loss_pos_ori.item())
 
                     # c2f(sim_mat, pos_mask, neg_mask, hard_pos_mask, gt_iou_)
 
@@ -475,6 +475,8 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                     print('recall\n', recall)
 
                     print('max:', max_)
+                    wandb.log(
+                        {'Val_Recall_Max': max_}, step=epoch)
                     # print(gt_iou.view(-1,)[:len(pos_mask[0])])
 
         tbar.set_postfix({'train loss': loss/float(count)})
