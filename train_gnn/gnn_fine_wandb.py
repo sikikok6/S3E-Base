@@ -229,6 +229,12 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                     ind_pose = ind.copy()
                     ind_pose[0] = ind_pose[1]
                     pose_embeddings = pose_embs[ind_pose]
+                    noise_pos = torch.randn_like(pose_embeddings[0][:3]).detach()
+                    noise_rot = torch.randn_like(pose_embeddings[0][3:]).detach()
+                    noise_all = torch.cat((noise_pos,noise_rot),dim=0)
+                    pose_embeddings[0] = pose_embeddings[0] + noise_all
+
+
 
                     indx = torch.tensor(ind).view((-1,))[dst[:len(labels) - 1]]
                     indy = torch.tensor(ind)[src[:len(labels) - 1]]
@@ -438,6 +444,11 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                         ind_pose[0] = ind_pose[1]
 
                         test_pose_embeddings = test_pose_embs[ind_pose]
+                        noise_pos = torch.randn_like(test_pose_embeddings[0][:3]).detach()
+                        noise_rot = torch.randn_like(test_pose_embeddings[0][3:]).detach()
+                        noise_all = torch.cat((noise_pos,noise_rot),dim=0)
+                        test_pose_embeddings[0] = test_pose_embeddings[0] + noise_all
+
                         embeddings = torch.cat(
                             (embeddings, test_pose_embeddings), dim=1)
 
