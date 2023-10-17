@@ -146,7 +146,7 @@ class myGNN(nn.Module):
         self.BN = nn.BatchNorm1d(2*in_feats)
         self.conv1 = SAGEConv(2*in_feats, 2*in_feats, 'mean')
 
-        self.Encoder = nn.Sequential(nn.Linear(in_feats+7, 2*in_feats),
+        self.Encoder = nn.Sequential(nn.Linear(in_feats, 2*in_feats),
                                      nn.ReLU()
                                      )
         
@@ -176,9 +176,9 @@ class myGNN(nn.Module):
         A = F.leaky_relu(A)
         A = F.normalize(A, dim=1)
 
-        est_pose = self.Decoder(A[0])
-        pos_out = est_pose[:3]
-        ori_out = est_pose[3:]
+        est_pose = self.Decoder(A)
+        pos_out = est_pose[:,:3]
+        ori_out = est_pose[:,3:]
 
         # A = A[:,:512]
         # A = F.leaky_relu(A)
@@ -592,8 +592,7 @@ def get_embeddings_3d(model, params, project_params, device, scene):
 
             # embedding is (1, 256) tensor
             # if params.normalize_embeddings:
-            #     embedding = torch.nn.functional.normalize(
-            #         embedding, p=2, dim=1)  # Normalize embeddings
+            embedding = torch.nn.functional.normalize(embedding, p=2, dim=1)  # Normalize embeddings
 
         embedding = embedding.detach().cpu().numpy()
         embeddings_l.append(embedding)

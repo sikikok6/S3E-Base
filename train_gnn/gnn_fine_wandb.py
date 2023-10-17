@@ -226,14 +226,15 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                     ind.extend(np.vstack(neighbours).reshape((-1,)).tolist())
 
                     '''Key Here To Change Poses For Query'''
-                    ind_pose = ind.copy()
-                    ind_pose[0] = ind_pose[1]
-                    pose_embeddings = pose_embs[ind_pose]
+                    # ind_pose = ind.copy()
+                    # ind_pose[0] = ind_pose[1]
+                    pose_embeddings = pose_embs[ind]
 
                     indx = torch.tensor(ind).view((-1,))[dst[:len(labels) - 1]]
                     indy = torch.tensor(ind)[src[:len(labels) - 1]]
-                    # embeddings = embs[ind]
-                    embeddings = torch.cat((embs[ind], pose_embeddings), dim=1)
+                    embeddings = embs[ind]
+                    #embeddings = torch.cat((embs[ind], pose_embeddings), dim=1)
+
                     gt_iou = gt[indx, indy].view((-1, 1))
                     gt_iou_ = iou[indx, indy].view((-1, 1)).cuda()
 
@@ -264,12 +265,13 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                     ap_fine = smoothap(hard_sim_mat, hard_p_mask)
 
                     # calculate poss loss
-                    gt_pose = pose_embs[labels[0]]
-                    pos_true = gt_pose[:3]
-                    ori_true = gt_pose[3:]
+                    #gt_pose = pose_embs[labels[0]]
+                    gt_pose = pose_embeddings
+                    pos_true = gt_pose[:,:3]
+                    ori_true = gt_pose[:,3:]
 
-                    ori_pred = F.normalize(ori_pred, p=2, dim=0)
-                    ori_true = F.normalize(ori_true, p=2, dim=0)
+                    ori_pred = F.normalize(ori_pred, p=2, dim=1)
+                    ori_true = F.normalize(ori_true, p=2, dim=1)
 
                     loss_pos = F.mse_loss(pos_pred, pos_true)
                     loss_ori = F.mse_loss(ori_pred, ori_true)
@@ -281,9 +283,9 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                     #alpha for mse1
                     alpha = 1
                     #beta for ori
-                    beta = 20
+                    beta = 1
                     #cardi for pos
-                    cardi = 2
+                    cardi = 1
                     #gamma for pos and ori
                     gamma = 1
 
@@ -326,7 +328,7 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                     train_pred_pose = np.hstack((pos_pred_np, ori_pred_np))
 
                     trans_error, rot_error = cal_trans_rot_errorv1(
-                            train_pred_pose, gt_pred_np)
+                            train_pred_pose[0], gt_pred_np[0])
                     
                     train_loss_dic['pos_error'].append(trans_error)
                     train_loss_dic['ori_error'].append(rot_error)
@@ -434,24 +436,25 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
 
                         embeddings = torch.vstack(
                             (query_embs[ind[0]], database_embs[ind[1:]]))
-                        ind_pose = ind.copy()
-                        ind_pose[0] = ind_pose[1]
+                        # ind_pose = ind.copy()
+                        # ind_pose[0] = ind_pose[1]
 
-                        test_pose_embeddings = test_pose_embs[ind_pose]
-                        embeddings = torch.cat(
-                            (embeddings, test_pose_embeddings), dim=1)
+                        test_pose_embeddings = test_pose_embs[ind]
+                        # embeddings = torch.cat(
+                        #     (embeddings, test_pose_embeddings), dim=1)
+                        embeddings = embeddings
 
                         A, e, test_pos_pred, test_ori_pred = model(
                             g, embeddings)
 
                         '''Pose Loss Cal'''
-                        test_gt_pose = test_pose_embs[labels[0]]
+                        test_gt_pose = test_pose_embeddings
                         # calculate poss loss
 
-                        test_pos_true = test_gt_pose[:3]
-                        test_ori_true = test_gt_pose[3:]
-                        test_ori_pred = F.normalize(test_ori_pred, p=2, dim=0)
-                        test_ori_true = F.normalize(test_ori_true, p=2, dim=0)
+                        test_pos_true = test_gt_pose[:,:3]
+                        test_ori_true = test_gt_pose[:,3:]
+                        test_ori_pred = F.normalize(test_ori_pred, p=2, dim=1)
+                        test_ori_true = F.normalize(test_ori_true, p=2, dim=1)
                         loss_pos = F.mse_loss(test_pos_pred, test_pos_true)
                         loss_ori = F.mse_loss(test_ori_pred, test_ori_true)
 
@@ -463,7 +466,7 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                             (test_pos_pred.cpu().numpy(), test_ori_pred.cpu().numpy()))
 
                         trans_error, rot_error = cal_trans_rot_errorv1(
-                            test_pred_pose, test_gt_pose.cpu().numpy())
+                            test_pred_pose[0], test_gt_pose.cpu().numpy()[0])
                         
                         val_loss_dic['pos_error'].append(trans_error)
                         val_loss_dic['ori_error'].append(rot_error)
