@@ -200,6 +200,8 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
         train_loss_dic['pos'] = []
         train_loss_dic['ori'] = []
         train_loss_dic['pos_ori'] = []
+        train_loss_dic['pos_error'] = []
+        train_loss_dic['ori_error'] = []
 
         with tqdm.tqdm(
                 dataloaders['train'], position=1, desc='batch', ncols=60) as tbar2:
@@ -279,9 +281,9 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                     #alpha for mse1
                     alpha = 1
                     #beta for ori
-                    beta = 500
+                    beta = 20
                     #cardi for pos
-                    cardi = 10
+                    cardi = 2
                     #gamma for pos and ori
                     gamma = 1
 
@@ -316,6 +318,18 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                     train_loss_dic['ori'].append(beta * train_loss_ori.item())
                     train_loss_dic['pos_ori'].append(
                         gamma * train_loss_pos_ori.item())
+                    
+                    pos_pred_np = pos_pred.detach().cpu().numpy()
+                    ori_pred_np = ori_pred.detach().cpu().numpy()
+                    gt_pred_np =  gt_pose.detach().cpu().numpy()
+
+                    train_pred_pose = np.hstack((pos_pred_np, ori_pred_np))
+
+                    trans_error, rot_error = cal_trans_rot_errorv1(
+                            train_pred_pose, gt_pred_np)
+                    
+                    train_loss_dic['pos_error'].append(trans_error)
+                    train_loss_dic['ori_error'].append(rot_error)
 
                     # c2f(sim_mat, pos_mask, neg_mask, hard_pos_mask, gt_iou_)
 
@@ -375,6 +389,13 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
 
             print(f"Epoch {epoch}:Train_Average_Loss:{loss/float(count)}")
             wandb.log({'Train_Average_Loss': loss/float(count)}, step=epoch)
+
+            print(f"Epoch {epoch}:Pos_Error:{sum_dict['pos_error']/float(count)}")
+            wandb.log({'Pos_Error': sum_dict['pos_error']/float(count)}, step=epoch)
+
+            print(f"Epoch {epoch}:Ori_Error:{sum_dict['ori_error']/float(count)}")
+            wandb.log({'Ori_Error': sum_dict['ori_error']/float(count)}, step=epoch)
+
 
             recall = (np.cumsum(recall)/float(num_evaluated))*100
             print('train recall\n', recall)
