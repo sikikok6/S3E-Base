@@ -592,8 +592,7 @@ def get_embeddings_3d(model, params, project_params, device, scene):
 
             # embedding is (1, 256) tensor
             # if params.normalize_embeddings:
-            #     embedding = torch.nn.functional.normalize(
-            #         embedding, p=2, dim=1)  # Normalize embeddings
+            embedding = torch.nn.functional.normalize(embedding, p=2, dim=1)  # Normalize embeddings
 
         embedding = embedding.detach().cpu().numpy()
         embeddings_l.append(embedding)
