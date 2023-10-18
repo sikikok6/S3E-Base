@@ -281,9 +281,9 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                     #alpha for mse1
                     alpha = 1
                     #beta for ori
-                    beta = 1
+                    beta = 100
                     #cardi for pos
-                    cardi = 1
+                    cardi = 10
                     #gamma for pos and ori
                     gamma = 1
 
