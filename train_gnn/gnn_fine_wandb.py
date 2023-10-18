@@ -40,7 +40,7 @@ current_time = datetime.datetime.now()
 time_string = current_time.strftime("%m%d_%H%M")
 
 run = wandb.init(project="SE3-Backup-V3-Model",
-                 name="Exp_"+time_string +"only_pose_error")
+                 name="Exp_"+time_string +"only_pose_error_fullgnn")
 
 config = os.path.join(project_args.project_dir, project_args.config_file)
 model_config = os.path.join(project_args.project_dir, project_args.model_file)
@@ -206,10 +206,8 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
         with tqdm.tqdm(
                 dataloaders['train'], position=1, desc='batch', ncols=60) as tbar2:
 
-            src = np.array(
-                list(range(1, 51 * (51 - 1) + 1)))
-            dst = np.repeat(
-                list(range(51)), 51 - 1)
+            src = np.tile(np.arange(51), 51)
+            dst = np.repeat(np.arange(51), 51)
 
             g = dgl.graph((src, dst))
             g = g.to('cuda')
@@ -223,7 +221,7 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                     # batch = {e: batch[e].to(device) for e in batch}
 
                     ind = [labels[0]]
-                    ind.extend(np.vstack(neighbours).reshape((-1,)).tolist())
+                    ind.extend(np.vstack(neighbours[0]).reshape((-1,)).tolist())
 
                     '''Key Here To Change Poses For Query'''
                     # ind_pose = ind.copy()
@@ -387,10 +385,8 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                 val_loss_dic['pos_error'] = []
                 val_loss_dic['ori_error'] = []
 
-                src = np.array(
-                    list(range(1, 51 * (51 - 1) + 1)))
-                dst = np.repeat(
-                    list(range(51)), 51 - 1)
+                src = np.tile(np.arange(51), 51)
+                dst = np.repeat(np.arange(51), 51)
 
                 g = dgl.graph((src, dst))
                 g = g.to('cuda')
@@ -399,7 +395,7 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                         ind = [labels[0]]
                         # ind = labels
                         ind.extend(
-                            np.vstack(neighbours).reshape((-1,)).tolist())
+                            np.vstack(neighbours[0]).reshape((-1,)).tolist())
 
                         embeddings = torch.vstack(
                             (query_embs[ind[0]], database_embs[ind[1:]]))
