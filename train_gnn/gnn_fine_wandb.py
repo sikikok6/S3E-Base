@@ -40,7 +40,7 @@ current_time = datetime.datetime.now()
 time_string = current_time.strftime("%m%d_%H%M")
 
 run = wandb.init(project="SE3-Backup-V3-Model",
-                 name="Exp_"+time_string +"fineloss")
+                 name="Exp_"+time_string +"only_pose_error")
 
 config = os.path.join(project_args.project_dir, project_args.config_file)
 model_config = os.path.join(project_args.project_dir, project_args.model_file)
@@ -195,8 +195,8 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
         num_evaluated = 0.
         recall = [0] * 50
         train_loss_dic = {}
-        train_loss_dic['ap'] = []
-        train_loss_dic['mse1'] = []
+        # train_loss_dic['ap'] = []
+        # train_loss_dic['mse1'] = []
         train_loss_dic['pos'] = []
         train_loss_dic['ori'] = []
         train_loss_dic['pos_ori'] = []
@@ -230,39 +230,39 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                     # ind_pose[0] = ind_pose[1]
                     pose_embeddings = pose_embs[ind]
 
-                    indx = torch.tensor(ind).view((-1,))[dst[:len(labels) - 1]]
-                    indy = torch.tensor(ind)[src[:len(labels) - 1]]
+                    # indx = torch.tensor(ind).view((-1,))[dst[:len(labels) - 1]]
+                    # indy = torch.tensor(ind)[src[:len(labels) - 1]]
                     embeddings = embs[ind]
                     #embeddings = torch.cat((embs[ind], pose_embeddings), dim=1)
 
-                    gt_iou = gt[indx, indy].view((-1, 1))
-                    gt_iou_ = iou[indx, indy].view((-1, 1)).cuda()
+                    # gt_iou = gt[indx, indy].view((-1, 1))
+                    # gt_iou_ = iou[indx, indy].view((-1, 1)).cuda()
 
                     A, e, pos_pred, ori_pred = model(g, embeddings)
 
-                    query_embeddings = torch.repeat_interleave(
-                        A[0].unsqueeze(0), len(labels) - 1, 0)
-                    database_embeddings = A[1:len(labels)]
-                    sim_mat = cos(query_embeddings, database_embeddings)
-                    # sim_mat = nn.functional.normalize(sim_mat, 2, 0)
-                    d1 = database_embeddings.repeat(
-                        1, len(database_embeddings), 1).squeeze()
-                    d2 = database_embeddings.repeat_interleave(
-                        len(database_embeddings), 0)
-                    database_sim_mat = cos(d1, d2).view(
-                        (len(database_embeddings), len(database_embeddings)))
+                    # query_embeddings = torch.repeat_interleave(
+                    #     A[0].unsqueeze(0), len(labels) - 1, 0)
+                    # database_embeddings = A[1:len(labels)]
+                    # sim_mat = cos(query_embeddings, database_embeddings)
+                    # # sim_mat = nn.functional.normalize(sim_mat, 2, 0)
+                    # d1 = database_embeddings.repeat(
+                    #     1, len(database_embeddings), 1).squeeze()
+                    # d2 = database_embeddings.repeat_interleave(
+                    #     len(database_embeddings), 0)
+                    # database_sim_mat = cos(d1, d2).view(
+                    #     (len(database_embeddings), len(database_embeddings)))
                     # sim_mat[sim_mat < 0] = 0
                     # sim_mat = torch.matmul(query_embs, database_embs.T).squeeze()
 
-                    loss_affinity_1 = criterion(
-                        e[:len(labels) - 1], gt_iou.cuda())
+                    # loss_affinity_1 = criterion(
+                    #     e[:len(labels) - 1], gt_iou.cuda())
 
-                    hard_sim_mat = sim_mat[pos_mask.squeeze()[1:]]
-                    hard_pos_mask[0][0] = True
-                    hard_p_mask = hard_pos_mask[pos_mask].unsqueeze(0)
+                    # hard_sim_mat = sim_mat[pos_mask.squeeze()[1:]]
+                    # hard_pos_mask[0][0] = True
+                    # hard_p_mask = hard_pos_mask[pos_mask].unsqueeze(0)
 
-                    ap_coarse = smoothap(sim_mat, pos_mask)
-                    ap_fine = smoothap(hard_sim_mat, hard_p_mask)
+                    # ap_coarse = smoothap(sim_mat, pos_mask)
+                    # ap_fine = smoothap(hard_sim_mat, hard_p_mask)
 
                     # calculate poss loss
                     #gt_pose = pose_embs[labels[0]]
@@ -289,9 +289,9 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                     #gamma for pos and ori
                     gamma = 1
 
-                    train_loss_ap = 1 - (0.7*ap_coarse + 0.3*ap_fine)
+                    # train_loss_ap = 1 - (0.7*ap_coarse + 0.3*ap_fine)
 
-                    train_loss_mse1 = loss_affinity_1
+                    # train_loss_mse1 = loss_affinity_1
                     #Here have cardi
                     train_loss_pos = cardi * loss_pos
                     #Here have beta
@@ -302,24 +302,14 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                     # losses.append(
                     #     1 - (0.7*ap_coarse + 0.3*ap_fine) + (30 * loss_affinity_1))
 
-                    losses.append(delta * train_loss_ap + 
-                                  alpha * train_loss_mse1 + 
-                                  gamma * train_loss_pos_ori)
+                    losses.append(train_loss_pos_ori)
                     
-                    train_loss_dic['ap'].append(delta*train_loss_ap.item())
-                    train_loss_dic['mse1'].append(alpha * train_loss_mse1.item())
+                    # train_loss_dic['ap'].append(delta*train_loss_ap.item())
+                    # train_loss_dic['mse1'].append(alpha * train_loss_mse1.item())
                     train_loss_dic['pos'].append(train_loss_pos.item())
                     train_loss_dic['ori'].append(train_loss_ori.item())
                     train_loss_dic['pos_ori'].append(gamma * train_loss_pos_ori.item())
                     
-
-                    train_loss_dic['ap'].append(train_loss_ap.item())
-                    train_loss_dic['mse1'].append(
-                        alpha * train_loss_mse1.item())
-                    train_loss_dic['pos'].append(train_loss_pos.item())
-                    train_loss_dic['ori'].append(beta * train_loss_ori.item())
-                    train_loss_dic['pos_ori'].append(
-                        gamma * train_loss_pos_ori.item())
                     
                     pos_pred_np = pos_pred.detach().cpu().numpy()
                     ori_pred_np = ori_pred.detach().cpu().numpy()
@@ -333,14 +323,7 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                     train_loss_dic['pos_error'].append(trans_error)
                     train_loss_dic['ori_error'].append(rot_error)
 
-                    # c2f(sim_mat, pos_mask, neg_mask, hard_pos_mask, gt_iou_)
-
-                    # c2f(sim_mat, database_sim_mat, pos_mask, hard_pos_mask,
-                    #     neg_mask,  gt_iou_)
-                    # + loss_affinity_1)
-                    # losses.append(
-                    #     smoothap(sim_mat, pos_mask) + loss_affinity_1)
-
+    
                     loss += losses[-1].item()
                     if cnt % 128 == 0 or cnt == len(train_iou):
                         a = torch.vstack(losses)
@@ -351,20 +334,6 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                         opt.step()
                         opt.zero_grad()
                         losses = []
-                    #
-                    rank = np.argsort(-sim_mat.detach().cpu().numpy())
-                    true_neighbors = train_iou[labels[0]].positives
-                    if len(true_neighbors) == 0:
-                        continue
-                    num_evaluated += 1
-
-                    flag = 0
-                    for j in range(len(rank)):
-                        if labels[1:][rank[j]] in true_neighbors:
-                            recall[j - flag] += 1
-                            break
-            # tbar2.set_postfix({'loss': loss_smoothap.item()})
-            # print(loss / cnt)
             count = tbar2.n
             # print(f"cnt is {cnt},count is {count}")
             sum_dict = {}
@@ -372,11 +341,11 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                 total_sum = sum(value)
                 sum_dict[key] = total_sum
 
-            print(f"Epoch {epoch}:Ap_Loss:{sum_dict['ap']/float(count)}")
-            wandb.log({'Ap_Loss': sum_dict['ap']/float(count)}, step=epoch)
+            # print(f"Epoch {epoch}:Ap_Loss:{sum_dict['ap']/float(count)}")
+            # wandb.log({'Ap_Loss': sum_dict['ap']/float(count)}, step=epoch)
 
-            print(f"Epoch {epoch}:Mse1_Loss:{sum_dict['mse1']/float(count)}")
-            wandb.log({'Mse1_Loss': sum_dict['mse1']/float(count)}, step=epoch)
+            # print(f"Epoch {epoch}:Mse1_Loss:{sum_dict['mse1']/float(count)}")
+            # wandb.log({'Mse1_Loss': sum_dict['mse1']/float(count)}, step=epoch)
 
             print(f"Epoch {epoch}:Pos_Loss:{sum_dict['pos']/float(count)}")
             wandb.log({'Pos_Loss': sum_dict['pos']/float(count)}, step=epoch)
@@ -399,8 +368,6 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
             wandb.log({'Ori_Error': sum_dict['ori_error']/float(count)}, step=epoch)
 
 
-            recall = (np.cumsum(recall)/float(num_evaluated))*100
-            print('train recall\n', recall)
 
             with torch.no_grad():
                 recall = [0] * 50
@@ -472,38 +439,38 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                         val_loss_dic['ori_error'].append(rot_error)
 
 
-                        database_embeddings = A[1:len(labels)]
+                        # database_embeddings = A[1:len(labels)]
 
-                        q = A[0].unsqueeze(0)
+                        # q = A[0].unsqueeze(0)
 
-                        query_embeddings = torch.repeat_interleave(
-                            q, len(labels) - 1, 0)
-                        # sim_mat = torch.matmul(q, database_embs.T).squeeze()
+                        # query_embeddings = torch.repeat_interleave(
+                        #     q, len(labels) - 1, 0)
+                        # # sim_mat = torch.matmul(q, database_embs.T).squeeze()
 
-                        sim_mat = cos(query_embeddings, database_embeddings)
+                        # sim_mat = cos(query_embeddings, database_embeddings)
 
-                        rank = torch.argsort((-sim_mat).squeeze())
+                        # rank = torch.argsort((-sim_mat).squeeze())
 
-                        # loss_smoothap = smoothap(sim_mat, pos_mask)
-                        # t_loss += loss_smoothap.item() / 2000
+                        # # loss_smoothap = smoothap(sim_mat, pos_mask)
+                        # # t_loss += loss_smoothap.item() / 2000
 
-                        # true_neighbors = gt_test
-                        true_neighbors = query[0][labels[0]][0]
-                        if len(true_neighbors) == 0:
-                            continue
-                        num_evaluated += 1
+                        # # true_neighbors = gt_test
+                        # true_neighbors = query[0][labels[0]][0]
+                        # if len(true_neighbors) == 0:
+                        #     continue
+                        # num_evaluated += 1
 
-                        flag = 0
-                        for j in range(len(rank)):
-                            # if rank[j] == 0:
-                            #     flag = 1
-                            #     continue
-                            if labels[1:][rank[j]] in true_neighbors:
-                                if j == 0:
-                                    similarity = sim_mat[rank[j]]
-                                    top1_similarity_score.append(similarity)
-                                recall[j - flag] += 1
-                                break
+                        # flag = 0
+                        # for j in range(len(rank)):
+                        #     # if rank[j] == 0:
+                        #     #     flag = 1
+                        #     #     continue
+                        #     if labels[1:][rank[j]] in true_neighbors:
+                        #         if j == 0:
+                        #             similarity = sim_mat[rank[j]]
+                        #             top1_similarity_score.append(similarity)
+                        #         recall[j - flag] += 1
+                        #         break
                     
                     val_sum_dict = {}
                     for key, value in val_loss_dic.items():
@@ -528,15 +495,15 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                     wandb.log(
                         {'val_rotation_error': val_sum_dict['ori_error']/evanums}, step=epoch)
 
-                    # one_percent_recall = (one_percent_retrieved/float(num_evaluated))*100
-                    recall = (np.cumsum(recall)/float(num_evaluated))*100
-                    max_ = max(max_, recall[0])
-                    print('recall\n', recall)
+                    # # one_percent_recall = (one_percent_retrieved/float(num_evaluated))*100
+                    # recall = (np.cumsum(recall)/float(num_evaluated))*100
+                    # max_ = max(max_, recall[0])
+                    # print('recall\n', recall)
 
-                    print('max:', max_)
-                    wandb.log(
-                        {'val_recall_Max': max_}, step=epoch)
-                    # print(gt_iou.view(-1,)[:len(pos_mask[0])])
+                    # print('max:', max_)
+                    # wandb.log(
+                    #     {'val_recall_Max': max_}, step=epoch)
+                    # # print(gt_iou.view(-1,)[:len(pos_mask[0])])
 
         tbar.set_postfix({'train loss': loss/float(count)})
 
