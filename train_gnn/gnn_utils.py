@@ -138,6 +138,18 @@ class MLP(nn.Module):
         return h
 
 
+
+class PoseReg(nn.Module):
+    def __init__(self, in_feats, out_feats) -> None:
+        super(MLP, self).__init__()
+        self.linear1 = nn.Linear(in_feats, out_feats)
+
+    def forward(self, f):
+        h = self.linear1(f)
+        return h[:3],h[3:]
+
+
+
 class myGNN(nn.Module):
     def __init__(self, in_feats, h_feats, out_feats):
         super(myGNN, self).__init__()
