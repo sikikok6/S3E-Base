@@ -304,11 +304,6 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                                   alpha * train_loss_mse1 + 
                                   gamma * train_loss_pos_ori)
                     
-                    train_loss_dic['ap'].append(delta*train_loss_ap.item())
-                    train_loss_dic['mse1'].append(alpha * train_loss_mse1.item())
-                    train_loss_dic['pos'].append(train_loss_pos.item())
-                    train_loss_dic['ori'].append(train_loss_ori.item())
-                    train_loss_dic['pos_ori'].append(gamma * train_loss_pos_ori.item())
                     
 
                     train_loss_dic['ap'].append(train_loss_ap.item())
