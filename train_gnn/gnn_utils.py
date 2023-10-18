@@ -176,16 +176,13 @@ class myGNN(nn.Module):
         A = F.leaky_relu(A)
         A = F.normalize(A, dim=1)
 
-        est_pose = self.Decoder(A[0])
-        pos_out = est_pose[:3]
-        ori_out = est_pose[3:]
 
         # A = A[:,:512]
         # A = F.leaky_relu(A)
         # A = F.normalize(A, dim=1)
         # pred2, A2 = self.conv2(g, pred)
 
-        return A, e , pos_out,ori_out
+        return A, e
 
 
 class ListDict(object):
