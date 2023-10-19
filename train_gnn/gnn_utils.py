@@ -142,16 +142,31 @@ class myGNN(nn.Module):
     def __init__(self, in_feats, h_feats, out_feats):
         super(myGNN, self).__init__()
 
-        self.MLP = MLP(2*in_feats, 1)
-        self.BN = nn.BatchNorm1d(2*in_feats)
-        self.conv1 = SAGEConv(2*in_feats, 2*in_feats, 'mean')
+        self.MLP = MLP(256, 1)
+        # self.BN = nn.BatchNorm1d(2*in_feats)
+        self.conv1 = SAGEConv(256, 128, 'mean')
 
-        self.Encoder = nn.Sequential(nn.Linear(in_feats+7, 2*in_feats),
+        self.mlp2 = nn.Sequential(nn.Linear(in_feats, 256),
+                                  nn.ReLU(),
+                                  nn.Linear(256, 128),
+                                  nn.ReLU(),
+                                  nn.Linear(128, 64),
+                                  nn.ReLU())
+
+        self.mlp3 = nn.Sequential(nn.Linear(7, 16),
+                                  nn.ReLU(),
+                                  nn.Linear(16, 32),
+                                  nn.ReLU(),
+                                  nn.Linear(32, 64),
+                                  nn.ReLU())
+
+        self.Encoder = nn.Sequential(nn.Linear(128, 256),
                                      nn.ReLU()
                                      )
 
-        self.Decoder = nn.Sequential(nn.Linear(2*in_feats, in_feats+7),
-                                     nn.Tanh())
+        self.Decoder = nn.Sequential(nn.Linear(128, 7)
+                                     # nn.Tanh()
+                                     )
 
     def apply_edges(self, edges):
         h_u = edges.src['x']
@@ -160,11 +175,13 @@ class myGNN(nn.Module):
         score = self.MLP(h_u - h_v)
         return {'score': score}
 
-    def forward(self, g, x):
+    def forward(self, g, x, x_pose):
 
-        x = self.Encoder(x)
+        x = self.mlp2(x)
+        x_pose = self.mlp3(x_pose)
+        x = self.Encoder(torch.cat((x, x_pose), dim=1))
 
-        x = self.BN(x)
+        # x = self.BN(x)
 
         with g.local_scope():
             g.ndata['x'] = x
@@ -173,14 +190,14 @@ class myGNN(nn.Module):
 
         A = self.conv1(g, x, e)
 
-        A = self.Decoder(A)
+        est_pose = self.Decoder(A)
 
-        est_pose = A[0, 512:]
+        # est_pose = A[0, 512:]
 
-        pos_out = est_pose[:3]
-        ori_out = est_pose[3:]
+        pos_out = est_pose[0, :3]
+        ori_out = est_pose[0, 3:]
 
-        A = A[:, :512]
+        # A = A[:, :512]
 
         A = F.leaky_relu(A)
 
@@ -548,7 +565,7 @@ def load_data_item(file_name, params, project_params, fp):
         # img = image4lidar(file_name, None,
         #                   None, None, k=1)
         img = Image.open(os.path.join(project_params.dataset_dir, project_params.scene,
-                         'color', file_name.replace('bin', 'color.png')))
+                                      'color', file_name.replace('bin', 'color.png')))
         transform = ValRGBTransform()
         # Convert to tensor and normalize
         result['image'] = transform(img)

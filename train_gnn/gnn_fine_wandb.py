@@ -189,6 +189,8 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
         # loss status
         loss = 0.
         losses = []
+        trans_loss = 0
+        rotation_loss = 0
         cnt = 0.
         num_evaluated = 0.
         recall = [0] * 50
@@ -198,6 +200,8 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
         train_loss_dic['pos'] = []
         train_loss_dic['ori'] = []
         train_loss_dic['pos_ori'] = []
+        train_loss_dic['train_tran_error'] = []
+        train_loss_dic['train_ori_error'] = []
 
         with tqdm.tqdm(
                 dataloaders['train'], position=1, desc='batch', ncols=60) as tbar2:
@@ -229,11 +233,13 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                     indx = torch.tensor(ind).view((-1,))[dst[:len(labels) - 1]]
                     indy = torch.tensor(ind)[src[:len(labels) - 1]]
                     # embeddings = embs[ind]
-                    embeddings = torch.cat((embs[ind], pose_embeddings), dim=1)
+                    # embeddings = torch.cat((embs[ind], pose_embeddings), dim=1)
+                    embeddings = embs[ind]
                     gt_iou = gt[indx, indy].view((-1, 1))
                     gt_iou_ = iou[indx, indy].view((-1, 1)).cuda()
 
-                    A, e, pos_pred, ori_pred = model(g, embeddings)
+                    A, e, pos_pred, ori_pred = model(
+                        g, embeddings, pose_embeddings)
 
                     query_embeddings = torch.repeat_interleave(
                         A[0].unsqueeze(0), len(labels) - 1, 0)
@@ -267,13 +273,16 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                     ori_pred = F.normalize(ori_pred, p=2, dim=0)
                     ori_true = F.normalize(ori_true, p=2, dim=0)
 
+                    pos_pred = F.normalize(pos_pred, p=2, dim=0)
+                    pos_true = F.normalize(pos_true, p=2, dim=0)
+
                     loss_pos = F.mse_loss(pos_pred, pos_true)
                     loss_ori = F.mse_loss(ori_pred, ori_true)
 
                     # alpha for mse1
-                    alpha = 30
+                    alpha = 3
                     # beta for ori
-                    beta = 500
+                    beta = 10
                     # gamma for pos and ori
                     gamma = 1
 
@@ -289,14 +298,24 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
 
                     losses.append(train_loss_ap + alpha *
                                   train_loss_mse1 + gamma * train_loss_pos_ori)
+                    pred_pose = np.hstack(
+                        (pos_pred.detach().cpu().numpy(), ori_pred.detach().cpu().numpy()))
+
+                    trans_error, rot_error = cal_trans_rot_error(
+                        pred_pose, gt_pose.detach().cpu().numpy())
+
+                    trans_loss += trans_error
+                    rotation_loss += rot_error
 
                     train_loss_dic['ap'].append(train_loss_ap.item())
                     train_loss_dic['mse1'].append(
                         alpha * train_loss_mse1.item())
-                    train_loss_dic['pos'] = [train_loss_pos.item()]
-                    train_loss_dic['ori'] = [beta * train_loss_ori.item()]
-                    train_loss_dic['pos_ori'] = [
-                        gamma * train_loss_pos_ori.item()]
+                    train_loss_dic['pos'].append(train_loss_pos.item())
+                    train_loss_dic['ori'].append(beta * train_loss_ori.item())
+                    train_loss_dic['pos_ori'].append(
+                        gamma * train_loss_pos_ori.item())
+                    train_loss_dic['train_tran_error'].append(trans_error)
+                    train_loss_dic['train_ori_error'].append(rot_error)
 
                     # c2f(sim_mat, pos_mask, neg_mask, hard_pos_mask, gt_iou_)
 
@@ -307,7 +326,7 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                     #     smoothap(sim_mat, pos_mask) + loss_affinity_1)
 
                     loss += losses[-1].item()
-                    if cnt % 128 == 0 or cnt == len(train_iou):
+                    if cnt % 32 == 0 or cnt == len(train_iou):
                         a = torch.vstack(losses)
                         a = torch.where(torch.isnan(
                             a), torch.full_like(a, 0), a)
@@ -348,6 +367,10 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
 
             print(f"Epoch {epoch}:Ori_Loss:{sum_dict['ori']/float(count)}")
             wandb.log({'Ori_Loss': sum_dict['ori']/float(count)}, step=epoch)
+            wandb.log(
+                {'train_tran_error': sum_dict['train_tran_error']/float(count)}, step=epoch)
+            wandb.log(
+                {'train_ori_error': sum_dict['train_ori_error']/float(count)}, step=epoch)
 
             print(
                 f"Epoch {epoch}:Pos_And_Ori_Loss:{sum_dict['pos_ori']/float(count)}")
@@ -392,11 +415,11 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                         ind_pose[0] = ind_pose[1]
 
                         test_pose_embeddings = test_pose_embs[ind_pose]
-                        embeddings = torch.cat(
-                            (embeddings, test_pose_embeddings), dim=1)
+                        # embeddings = torch.cat(
+                        #     (embeddings, test_pose_embeddings), dim=1)
 
                         A, e, test_pos_pred, test_ori_pred = model(
-                            g, embeddings)
+                            g, embeddings, test_pose_embeddings)
 
                         '''Pose Loss Cal'''
                         test_gt_pose = test_pose_embs[labels[0]]
@@ -404,23 +427,18 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
 
                         test_pos_true = test_gt_pose[:3]
                         test_ori_true = test_gt_pose[3:]
+
                         test_ori_pred = F.normalize(test_ori_pred, p=2, dim=0)
                         test_ori_true = F.normalize(test_ori_true, p=2, dim=0)
                         loss_pos = F.mse_loss(test_pos_pred, test_pos_true)
                         loss_ori = F.mse_loss(test_ori_pred, test_ori_true)
 
-                        test_pos_pred, test_ori_pred
+                        # test_pos_pred, test_ori_pred
 
                         test_pred_pose = np.hstack(
                             (test_pos_pred.cpu().numpy(), test_ori_pred.cpu().numpy()))
 
-                        trans_error, rot_error = cal_trans_rot_error(
-                            test_pred_pose, test_gt_pose.cpu().numpy())
-
                         t_loss += loss_pos.item() + beta * loss_ori.item()
-
-                        trans_loss += trans_error
-                        rotation_loss += rot_error
 
                         database_embeddings = A[1:len(labels)]
 
@@ -442,6 +460,12 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                         if len(true_neighbors) == 0:
                             continue
                         num_evaluated += 1
+
+                        trans_error, rot_error = cal_trans_rot_error(
+                            test_pred_pose, test_gt_pose.cpu().numpy())
+
+                        trans_loss += trans_error
+                        rotation_loss += rot_error
 
                         flag = 0
                         for j in range(len(rank)):
