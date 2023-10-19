@@ -39,7 +39,7 @@ project_args = parser.parse_args()
 current_time = datetime.datetime.now()
 time_string = current_time.strftime("%m%d_%H%M")
 
-run = wandb.init(project="SE3-Backup-V3-Model",
+run = wandb.init(project="SE3-Backup-NoCL-Dataset_FullGNN",
                  name="Exp_"+time_string +"only_pose_error_fullgnn")
 
 config = os.path.join(project_args.project_dir, project_args.config_file)
@@ -51,9 +51,6 @@ print("config: ", config)
 print("model config: ", model_config)
 print("rgb weights: ", rgb_weights)
 print("pcl weights: ", pcl_weights)
-
-run = wandb.init(project="SE3-Backup-V2-Model",
-                 name="Exp_"+time_string + "fineloss")
 
 # config = '/home/ubuntu-user/S3E-backup/config/config_baseline_multimodal.txt'
 # model_config = '//home/ubuntu-user/S3E-backup/models/minkloc3d.txt'
@@ -165,7 +162,7 @@ print(len(test_embs))
 # embs = np.hstack((embs, embs))
 # test_embs = np.hstack((test_embs, test_embs))
 database_len = len(test_embs) // 2 if len(test_embs) < 4000 else 3000
-database_embs = torch.tensor(test_embs[:database_len].copy())
+database_embs = torch.tensor(embs)
 query_embs = torch.tensor(test_embs[database_len:].copy())
 # test_embs = torch.tensor(test_embs).to('cuda')
 database_embs = database_embs.to('cuda')
@@ -283,7 +280,7 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                     #beta for ori
                     beta = 100
                     #cardi for pos
-                    cardi = 10
+                    cardi = 1
                     #gamma for pos and ori
                     gamma = 1
 
@@ -402,7 +399,7 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                         # ind_pose = ind.copy()
                         # ind_pose[0] = ind_pose[1]
 
-                        test_pose_embeddings = test_pose_embs[ind]
+                        test_pose_embeddings = torch.vstack((test_pose_embs[ind[0]], pose_embs[ind[1:]]))
                         # embeddings = torch.cat(
                         #     (embeddings, test_pose_embeddings), dim=1)
                         embeddings = embeddings

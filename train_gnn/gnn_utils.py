@@ -142,15 +142,15 @@ class myGNN(nn.Module):
     def __init__(self, in_feats, h_feats, out_feats):
         super(myGNN, self).__init__()
 
-        self.MLP = MLP(2*in_feats, 1)
-        self.BN = nn.BatchNorm1d(2*in_feats)
-        self.conv1 = SAGEConv(2*in_feats, 2*in_feats, 'mean')
+        self.MLP = MLP(in_feats, 1)
+        self.BN = nn.BatchNorm1d(in_feats)
+        self.conv1 = SAGEConv(in_feats, in_feats, 'mean')
 
         self.Encoder = nn.Sequential(nn.Linear(in_feats, 2*in_feats),
                                      nn.ReLU()
                                      )
         
-        self.Decoder = nn.Sequential(nn.Linear(2*in_feats,7))
+        self.Decoder = nn.Sequential(nn.Linear(in_feats,7))
         
 
     def apply_edges(self, edges):
@@ -162,7 +162,7 @@ class myGNN(nn.Module):
 
     def forward(self, g, x):
 
-        x = self.Encoder(x)
+        #x = self.Encoder(x)
 
         x = self.BN(x)
 
@@ -425,7 +425,7 @@ def make_smoothap_collate_fn(dataset: ScanNetDataset, mink_quantization_size=Non
         neighbours = []
         if val == 'val':
             neighbours.append(query_sim_mat[labels[0]][:num])
-            neighbours_temp = [database_sim_mat[item][1:num+1]
+            neighbours_temp = [train_sim_mat[item][1:num+1]
                                for item in labels[1:]]
             neighbours.extend(neighbours_temp)
 
@@ -463,7 +463,7 @@ def make_dataloader(params, project_params):
 
     train_sim = distance.cdist(train_embeddings, train_embeddings)
     database_sim = distance.cdist(database_embeddings, database_embeddings)
-    query_sim = distance.cdist(query_embeddings, database_embeddings)
+    query_sim = distance.cdist(query_embeddings, train_embeddings)
     print(query_sim.shape)
 
     # train_sim = np.matmul(train_embeddings, train_embeddings.T)
