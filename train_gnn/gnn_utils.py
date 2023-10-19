@@ -141,7 +141,7 @@ class MLP(nn.Module):
 
 class PoseReg(nn.Module):
     def __init__(self, in_feats, out_feats) -> None:
-        super(MLP, self).__init__()
+        super(PoseReg, self).__init__()
         self.linear1 = nn.Linear(in_feats, out_feats)
 
     def forward(self, f):
