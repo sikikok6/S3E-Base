@@ -158,43 +158,23 @@ class myGNN(nn.Module):
     def __init__(self, in_feats, h_feats, out_feats):
         super(myGNN, self).__init__()
 
-        self.MLP = MLP(256, 1)
+        self.MLP = MLP(1024, 1)
         # self.BN = nn.BatchNorm1d(2*in_feats)
-        self.conv1 = SAGEConv(256, 128, 'mean')
+        self.conv1 = SAGEConv(1024, 512, 'mean')
 
-        self.mlp2 = nn.Sequential(nn.Linear(in_feats, 256),
-                                  nn.ReLU(),
-                                  nn.Linear(256, 128),
-                                  nn.ReLU(),
-                                  nn.Linear(128, 64),
-                                  nn.ReLU())
-
-        self.mlp3 = nn.Sequential(nn.Linear(7, 16),
-                                  nn.ReLU(),
-                                  nn.Linear(16, 32),
-                                  nn.ReLU(),
-                                  nn.Linear(32, 64),
-                                  nn.ReLU())
-
-        self.Encoder = nn.Sequential(nn.Linear(128, 256),
-                                     nn.ReLU()
-                                     )
-        
-        self.Decoder = nn.Sequential(nn.Linear(2*in_feats,7))
+        self.Encoder = (nn.Sequential(nn.Linear(512+7,1024),
+                                   nn.ReLU()))
         
 
     def apply_edges(self, edges):
         h_u = edges.src['x']
         h_v = edges.dst['x']
-        # score = self.MLP(torch.cat((h_u, h_v), 1))
         score = self.MLP(h_u - h_v)
         return {'score': score}
 
-    def forward(self, g, x, x_pose):
+    def forward(self, g, x):
 
-        x = self.mlp2(x)
-        x_pose = self.mlp3(x_pose)
-        x = self.Encoder(torch.cat((x, x_pose), dim=1))
+        x = self.Encoder(x)
 
         # x = self.BN(x)
 
@@ -443,7 +423,7 @@ def make_smoothap_collate_fn(dataset: ScanNetDataset, mink_quantization_size=Non
         global train_sim_mat
         global database_sim_mat
         global query_sim_mat
-        num = 200
+        num = 50
         positives_mask = []
         hard_positives_mask = []
         negatives_mask = []
@@ -522,9 +502,8 @@ def make_dataloader(params, project_params):
     global query_sim_mat
 
     train_sim = distance.cdist(train_embeddings, train_embeddings)
-    database_sim = distance.cdist(database_embeddings, database_embeddings)
-    database_sim = train_sim.copy()
-    query_sim = distance.cdist(database_embeddings, train_embeddings)
+    database_sim = distance.cdist(train_embeddings, train_embeddings)
+    query_sim = distance.cdist(database_embeddings, train_embeddings)#[:1000,2000]
     # query_sim = database_sim
     print(query_sim.shape)
 
