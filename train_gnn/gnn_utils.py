@@ -142,10 +142,14 @@ class MLP(nn.Module):
 class PoseReg(nn.Module):
     def __init__(self, in_feats, out_feats) -> None:
         super(PoseReg, self).__init__()
-        self.linear1 = nn.Linear(in_feats, out_feats)
+        self.linear1 = nn.Sequential(nn.Linear(in_feats, 256),
+                       nn.Tanh())
+        self.linear2 = nn.Linear(256, out_feats)
+        
 
     def forward(self, f):
-        h = self.linear1(f)
+        f = self.linear1(f)
+        h = self.linear2(f)
         return h[:3],h[3:]
 
 
@@ -471,8 +475,8 @@ def make_dataloader(params, project_params):
     global query_sim_mat
 
     train_sim = distance.cdist(train_embeddings, train_embeddings)
-    database_sim = distance.cdist(database_embeddings, database_embeddings)
-    query_sim = distance.cdist(query_embeddings, database_embeddings)
+    database_sim = distance.cdist(train_embeddings, train_embeddings)
+    query_sim = distance.cdist(query_embeddings, train_embeddings)
     print(query_sim.shape)
 
     # train_sim = np.matmul(train_embeddings, train_embeddings.T)
