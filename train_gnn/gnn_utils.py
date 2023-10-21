@@ -189,6 +189,7 @@ class myGNN(nn.Module):
             e = g.edata['score']
 
         A = self.conv1(g, x, e)
+        # A = self.conv1(g, x)
 
         est_pose = self.Decoder(A)
 
@@ -341,6 +342,36 @@ class BatchSampler(Sampler):
                 len(batch))
 
 
+class PoseLoss(nn.Module):
+    def __init__(self, sx=0.0, sq=0.0, learn_beta=False):
+        super(PoseLoss, self).__init__()
+        self.learn_beta = learn_beta
+
+        if not self.learn_beta:
+            self.sx = 0.0
+            self.sq = -6.25
+
+        self.sx = nn.Parameter(torch.Tensor(
+            [sx]), requires_grad=self.learn_beta)
+        self.sq = nn.Parameter(torch.Tensor(
+            [sq]), requires_grad=self.learn_beta)
+        self.loss_print = None
+
+    def forward(self, pred_x, pred_q, target_x, target_q):
+        pred_q = F.normalize(pred_q, p=2, dim=1)
+        loss_x = F.l1_loss(pred_x, target_x)
+        loss_q = F.l1_loss(pred_q, target_q)
+
+        loss = torch.exp(-self.sx)*loss_x \
+            + self.sx \
+            + torch.exp(-self.sq)*loss_q \
+            + self.sq
+
+        self.loss_print = [loss.item(), loss_x.item(), loss_q.item()]
+
+        return loss, loss_x.item(), loss_q.item()
+
+
 def in_sorted_array(e: int, array: np.ndarray) -> bool:
     if array == None or len(array) == 0:
         return False
@@ -401,7 +432,7 @@ def make_smoothap_collate_fn(dataset: ScanNetDataset, mink_quantization_size=Non
         global train_sim_mat
         global database_sim_mat
         global query_sim_mat
-        num = 50
+        num = 200
         positives_mask = []
         hard_positives_mask = []
         negatives_mask = []
@@ -481,7 +512,9 @@ def make_dataloader(params, project_params):
 
     train_sim = distance.cdist(train_embeddings, train_embeddings)
     database_sim = distance.cdist(database_embeddings, database_embeddings)
-    query_sim = distance.cdist(query_embeddings, database_embeddings)
+    database_sim = train_sim.copy()
+    query_sim = distance.cdist(database_embeddings, train_embeddings)
+    # query_sim = database_sim
     print(query_sim.shape)
 
     # train_sim = np.matmul(train_embeddings, train_embeddings.T)
