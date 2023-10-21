@@ -158,11 +158,25 @@ class myGNN(nn.Module):
     def __init__(self, in_feats, h_feats, out_feats):
         super(myGNN, self).__init__()
 
-        self.MLP = MLP(2*in_feats, 1)
-        self.BN = nn.BatchNorm1d(2*in_feats)
-        self.conv1 = SAGEConv(2*in_feats, 2*in_feats, 'mean')
+        self.MLP = MLP(256, 1)
+        # self.BN = nn.BatchNorm1d(2*in_feats)
+        self.conv1 = SAGEConv(256, 128, 'mean')
 
-        self.Encoder = nn.Sequential(nn.Linear(in_feats+7, 2*in_feats),
+        self.mlp2 = nn.Sequential(nn.Linear(in_feats, 256),
+                                  nn.ReLU(),
+                                  nn.Linear(256, 128),
+                                  nn.ReLU(),
+                                  nn.Linear(128, 64),
+                                  nn.ReLU())
+
+        self.mlp3 = nn.Sequential(nn.Linear(7, 16),
+                                  nn.ReLU(),
+                                  nn.Linear(16, 32),
+                                  nn.ReLU(),
+                                  nn.Linear(32, 64),
+                                  nn.ReLU())
+
+        self.Encoder = nn.Sequential(nn.Linear(128, 256),
                                      nn.ReLU()
                                      )
         
@@ -176,11 +190,13 @@ class myGNN(nn.Module):
         score = self.MLP(h_u - h_v)
         return {'score': score}
 
-    def forward(self, g, x):
+    def forward(self, g, x, x_pose):
 
-        x = self.Encoder(x)
+        x = self.mlp2(x)
+        x_pose = self.mlp3(x_pose)
+        x = self.Encoder(torch.cat((x, x_pose), dim=1))
 
-        x = self.BN(x)
+        # x = self.BN(x)
 
         with g.local_scope():
             g.ndata['x'] = x
@@ -188,6 +204,7 @@ class myGNN(nn.Module):
             e = g.edata['score']
 
         A = self.conv1(g, x, e)
+        # A = self.conv1(g, x)
 
         A = F.leaky_relu(A)
         A = F.normalize(A, dim=1)
@@ -336,6 +353,36 @@ class BatchSampler(Sampler):
                 len(batch))
 
 
+class PoseLoss(nn.Module):
+    def __init__(self, sx=0.0, sq=0.0, learn_beta=False):
+        super(PoseLoss, self).__init__()
+        self.learn_beta = learn_beta
+
+        if not self.learn_beta:
+            self.sx = 0.0
+            self.sq = -6.25
+
+        self.sx = nn.Parameter(torch.Tensor(
+            [sx]), requires_grad=self.learn_beta)
+        self.sq = nn.Parameter(torch.Tensor(
+            [sq]), requires_grad=self.learn_beta)
+        self.loss_print = None
+
+    def forward(self, pred_x, pred_q, target_x, target_q):
+        pred_q = F.normalize(pred_q, p=2, dim=1)
+        loss_x = F.l1_loss(pred_x, target_x)
+        loss_q = F.l1_loss(pred_q, target_q)
+
+        loss = torch.exp(-self.sx)*loss_x \
+            + self.sx \
+            + torch.exp(-self.sq)*loss_q \
+            + self.sq
+
+        self.loss_print = [loss.item(), loss_x.item(), loss_q.item()]
+
+        return loss, loss_x.item(), loss_q.item()
+
+
 def in_sorted_array(e: int, array: np.ndarray) -> bool:
     if array == None or len(array) == 0:
         return False
@@ -396,7 +443,7 @@ def make_smoothap_collate_fn(dataset: ScanNetDataset, mink_quantization_size=Non
         global train_sim_mat
         global database_sim_mat
         global query_sim_mat
-        num = 50
+        num = 200
         positives_mask = []
         hard_positives_mask = []
         negatives_mask = []
@@ -475,8 +522,10 @@ def make_dataloader(params, project_params):
     global query_sim_mat
 
     train_sim = distance.cdist(train_embeddings, train_embeddings)
-    database_sim = distance.cdist(train_embeddings, train_embeddings)
-    query_sim = distance.cdist(query_embeddings, train_embeddings)
+    database_sim = distance.cdist(database_embeddings, database_embeddings)
+    database_sim = train_sim.copy()
+    query_sim = distance.cdist(database_embeddings, train_embeddings)
+    # query_sim = database_sim
     print(query_sim.shape)
 
     # train_sim = np.matmul(train_embeddings, train_embeddings.T)
@@ -560,7 +609,7 @@ def load_data_item(file_name, params, project_params, fp):
         # img = image4lidar(file_name, None,
         #                   None, None, k=1)
         img = Image.open(os.path.join(project_params.dataset_dir, project_params.scene,
-                         'color', file_name.replace('bin', 'color.png')))
+                                      'color', file_name.replace('bin', 'color.png')))
         transform = ValRGBTransform()
         # Convert to tensor and normalize
         result['image'] = transform(img)
