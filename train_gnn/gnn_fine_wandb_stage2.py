@@ -8,7 +8,7 @@ import torch.nn as nn
 import torch
 import numpy as np
 import tqdm
-from gnn_utils import load_minkLoc_model, make_dataloader, PoseReg ,get_embeddings_3d, get_embeddings, get_poses, cal_trans_rot_errorv1
+from gnn_utils import load_minkLoc_model, make_dataloader, PoseReg ,get_embeddings_3d, get_embeddings, get_poses, cal_trans_rot_errorv1,PoseLoss
 import os
 import argparse
 
@@ -138,6 +138,9 @@ model_path = '/home/ubuntu-user/S3E-backup/train_gnn/savemodel/'+time_string+'_s
 model = PoseReg(1024,7)
 model.to('cuda')
 
+pose_loss = PoseLoss().to('cuda')
+pose_loss.eval()
+
 print(model)
 
 opt = torch.optim.Adam(
@@ -167,7 +170,7 @@ test_pose_embs = torch.tensor(test_pose_embs, dtype=torch.float32).to('cuda')
 
 max_ = 0.
 # labels = range(len(feat))
-with tqdm.tqdm(range(80), position=0, desc='epoch', ncols=60) as tbar:
+with tqdm.tqdm(range(100), position=0, desc='epoch', ncols=60) as tbar:
     for epoch in tbar:
         # loss status
         loss = 0.
@@ -206,17 +209,18 @@ with tqdm.tqdm(range(80), position=0, desc='epoch', ncols=60) as tbar:
                     ori_pred = F.normalize(ori_pred, p=2, dim=0)
                     ori_true = F.normalize(ori_true, p=2, dim=0)
 
-                    loss_pos = F.mse_loss(pos_pred, pos_true)
-                    loss_ori = F.mse_loss(ori_pred, ori_true)
-
-                    alpha = 10
-                    beta = 200
                     
-                    train_loss_pos = alpha * loss_pos
-                    #Here have beta
-                    train_loss_ori = beta * loss_ori
+                    loss_pose, loss_pos, loss_ori = pose_loss(pos_pred.unsqueeze(
+                        0), ori_pred.unsqueeze(0), pos_true.unsqueeze(0), ori_true.unsqueeze(0))
 
-                    train_loss_pos_ori = train_loss_pos + train_loss_ori
+                    alpha = 1
+                    beta = 1
+                    
+                    train_loss_pos = loss_pos
+                    #Here have beta
+                    train_loss_ori = loss_ori
+
+                    train_loss_pos_ori = loss_pose
 
                     # losses.append(
                     #     1 - (0.7*ap_coarse + 0.3*ap_fine) + (30 * loss_affinity_1))
@@ -224,10 +228,9 @@ with tqdm.tqdm(range(80), position=0, desc='epoch', ncols=60) as tbar:
                     losses.append(train_loss_pos_ori)
                     
                     
-
                     
-                    train_loss_dic['pos'].append(train_loss_pos.item())
-                    train_loss_dic['ori'].append(train_loss_ori.item())
+                    train_loss_dic['pos'].append(train_loss_pos)
+                    train_loss_dic['ori'].append(train_loss_ori)
                     train_loss_dic['pos_ori'].append(train_loss_pos_ori.item())
                     
                     pos_pred_np = pos_pred.detach().cpu().numpy()
@@ -280,6 +283,11 @@ with tqdm.tqdm(range(80), position=0, desc='epoch', ncols=60) as tbar:
             print(f"Epoch {epoch}:Ori_Error:{sum_dict['ori_error']/float(count)}")
             wandb.log({'Ori_Error': sum_dict['ori_error']/float(count)}, step=epoch)
 
+            print(
+                f"\033[1;32mEpoch {epoch}:tran_error:{sum_dict['pos_error']/float(count)}\033[0m")
+            print(
+                f"\033[1;32mEpoch {epoch}:ori_error:{sum_dict['ori_error']/float(count)}\033[0m")
+
 
             with torch.no_grad():
                 model.eval()
@@ -292,6 +300,7 @@ with tqdm.tqdm(range(80), position=0, desc='epoch', ncols=60) as tbar:
                 val_loss_dic['ori'] = []
                 val_loss_dic['pos_error'] = []
                 val_loss_dic['ori_error'] = []
+                val_loss_dic['pos_and_ori'] = []
 
                 with tqdm.tqdm(dataloaders['val'], position=1, desc='batch', ncols=50) as tbar3:
                     for pos_mask, neg_mask, hard_pos_mask, labels, neighbours, most_pos_mask, batch in tbar3:
@@ -308,11 +317,17 @@ with tqdm.tqdm(range(80), position=0, desc='epoch', ncols=60) as tbar:
                         test_ori_true = test_gt_pose[3:]
                         test_ori_pred = F.normalize(test_ori_pred, p=2, dim=0)
                         test_ori_true = F.normalize(test_ori_true, p=2, dim=0)
+
                         loss_pos = F.mse_loss(test_pos_pred, test_pos_true)
                         loss_ori = F.mse_loss(test_ori_pred, test_ori_true)
 
-                        val_loss_dic['pos'].append(loss_pos.item())
-                        val_loss_dic['ori'].append(loss_ori.item())
+                        loss_pose, loss_pos, loss_ori = pose_loss(test_pos_pred.unsqueeze(
+                            0), test_ori_pred.unsqueeze(0), test_pos_true.unsqueeze(0), test_ori_true.unsqueeze(0))
+                        
+
+                        val_loss_dic['pos'].append(loss_pos)
+                        val_loss_dic['ori'].append(loss_ori)
+                        val_loss_dic['pos_and_ori'].append(loss_pose.item())
                         
 
                         test_pred_pose = np.hstack(
@@ -347,6 +362,13 @@ with tqdm.tqdm(range(80), position=0, desc='epoch', ncols=60) as tbar:
                     print(f"val_rotation_error:{val_sum_dict['ori_error']/evanums}")
                     wandb.log(
                         {'val_rotation_error': val_sum_dict['ori_error']/evanums}, step=epoch)
+                    
+                    print(f"val_pos_and_ori_loss:{val_sum_dict['pos_and_ori']/evanums}")
+                    wandb.log(
+                        {'val_pos_and_ori_loss': val_sum_dict['pos_and_ori']/evanums}, step=epoch)
+                    
+                    print(f"\033[1;33mVal_trans_error:{val_sum_dict['pos_error']/evanums}\033[0m")
+                    print(f"\033[1;33mVal_rotation_error:{val_sum_dict['ori_error']/evanums}\033[0m")
 
             
         tbar.set_postfix({'train loss': loss/float(count)})
