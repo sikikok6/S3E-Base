@@ -243,6 +243,10 @@ class ListDict(object):
         return len(self.items)
 
 
+def split_batch(lst, batch_size):
+    return [lst[i:i + batch_size] for i in range(0, len(lst), batch_size)]
+
+
 class BatchSampler(Sampler):
     # Sampler returning list of indices to form a mini-batch
     # Samples elements in groups consisting of k=2 similar elements (positives)
@@ -260,9 +264,6 @@ class BatchSampler(Sampler):
         self.elems_ndx = list(self.dataset.queries)
 
     def __iter__(self):
-        # Re-generate batches every epoch
-        # self.generate_batches()
-        # self.generate_most_only_batches()
         if self.type == 'train':
             # self.generate_top_batches()
             self.generate_smoothap_batches()
@@ -279,17 +280,19 @@ class BatchSampler(Sampler):
     def generate_smoothap_batches(self):
         self.batch_idx = []
         for ndx in range(len(self.dataset)):
-            current_batch = []
-            current_batch.append(ndx)
-            self.batch_idx.append(current_batch)
+            # current_batch = []
+            # current_batch.append(ndx)
+            self.batch_idx.append(ndx)
         random.shuffle(self.batch_idx)
+        self.batch_idx = split_batch(self.batch_idx, self.batch_size)
 
     def generate_smoothap_val_batches(self):
         self.batch_idx = []
         for ndx in range(len(self.dataset)):
-            current_batch = []
-            current_batch.append(ndx)
-            self.batch_idx.append(current_batch)
+            # current_batch = []
+            # current_batch.append(ndx)
+            self.batch_idx.append(ndx)
+        self.batch_idx = split_batch(self.batch_idx, self.batch_size)
 
     def generate_batches(self):
         # Generate training/evaluation batches.
@@ -432,7 +435,7 @@ def make_smoothap_collate_fn(dataset: ScanNetDataset, mink_quantization_size=Non
         global train_sim_mat
         global database_sim_mat
         global query_sim_mat
-        num = 200
+        num = 50
         positives_mask = []
         hard_positives_mask = []
         negatives_mask = []
@@ -558,14 +561,14 @@ def make_dataloader(params, project_params):
 
     dataloaders = {}
     train_sampler = BatchSampler(
-        datasets['train'], batch_size=100, type='train')
+        datasets['train'], batch_size=16, type='train')
     # Collate function collates items into a batch and applies a 'set transform' on the entire batch
     train_collate_fn = make_smoothap_collate_fn(datasets['train'],  0.01)
     dataloaders['train'] = DataLoader(datasets['train'], batch_sampler=train_sampler, collate_fn=train_collate_fn,
                                       num_workers=params.num_workers, pin_memory=False)
 
     if 'val' in datasets:
-        val_sampler = BatchSampler(datasets['val'], batch_size=100, type='val')
+        val_sampler = BatchSampler(datasets['val'], batch_size=16, type='val')
         # Collate function collates items into a batch and applies a 'set transform' on the entire batch
         # Currently validation dataset has empty set_transform function, but it may change in the future
         val_collate_fn = make_smoothap_collate_fn(datasets['val'], 0.01, 'val')

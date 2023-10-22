@@ -50,8 +50,8 @@ print("model config: ", model_config)
 print("rgb weights: ", rgb_weights)
 print("pcl weights: ", pcl_weights)
 
-run = wandb.init(project="SE3-Backup-V2-Model",
-                 name="Exp_"+time_string + "fineloss")
+# run = wandb.init(project="SE3-Backup-V2-Model",
+#                  name="Exp_"+time_string + "fineloss")
 
 # config = '/home/ubuntu-user/S3E-backup/config/config_baseline_multimodal.txt'
 # model_config = '//home/ubuntu-user/S3E-backup/models/minkloc3d.txt'
@@ -214,8 +214,8 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
             # dst = np.repeat(
             #     list(range(51)), 51 - 1)
 
-            src = np.array(list(range(1, 201)))
-            dst = np.repeat(list(range(1)), 200)
+            src = np.array(list(range(1, 51)))
+            dst = np.repeat(list(range(1)), 50)
 
             g = dgl.graph((src, dst))
             g = g.to('cuda')
@@ -234,13 +234,13 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                     '''Key Here To Change Poses For Query'''
                     ind_pose = ind.copy()
                     ind_pose[0] = ind_pose[1]
-                    pose_embeddings = pose_embs[ind_pose[:201]]
+                    pose_embeddings = pose_embs[ind_pose[:51]]
 
                     indx = torch.tensor(ind).view((-1,))[dst[:len(labels) - 1]]
                     indy = torch.tensor(ind)[src[:len(labels) - 1]]
                     # embeddings = embs[ind]
                     # embeddings = torch.cat((embs[ind], pose_embeddings), dim=1)
-                    embeddings = embs[ind[:201]]
+                    embeddings = embs[ind[:51]]
                     gt_iou = gt[indx, indy].view((-1, 1))
                     gt_iou_ = iou[indx, indy].view((-1, 1)).cuda()
 
@@ -415,8 +415,8 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                 #     list(range(1, 51 * (51 - 1) + 1)))
                 # dst = np.repeat(
                 #     list(range(51)), 51 - 1)
-                src = np.array(list(range(1, 201)))
-                dst = np.repeat(list(range(1)), 200)
+                src = np.array(list(range(1, 51)))
+                dst = np.repeat(list(range(1)), 50)
 
                 g = dgl.graph((src, dst))
                 g = g.to('cuda')
@@ -428,10 +428,10 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                             np.vstack(neighbours).reshape((-1,)).tolist())
 
                         embeddings = torch.vstack(
-                            (database_embs[ind[0]], embs[ind[1:201]]))
+                            (database_embs[ind[0]], embs[ind[1:51]]))
                         ind_pose = ind.copy()
                         ind_pose[0] = ind_pose[1]
-                        test_pose_embeddings = pose_embs[ind_pose[:201]]
+                        test_pose_embeddings = pose_embs[ind_pose[:51]]
                         test_pose_embeddings[0] = test_pose_embs[labels[0]]
                         # embeddings = torch.cat(
                         #     (embeddings, test_pose_embeddings), dim=1)
