@@ -108,7 +108,7 @@ if params.model_params.model == "MinkLocMultimodal":
 else:
     in_feats = 256
 
-model_path = '/home/ubuntu-user/S3E-backup/train_gnn/savemodel/1022_1649_stage1_dgl_model.pt'
+model_path = '/home/ubuntu-user/S3E-backup/train_gnn/savemodel/1022_2226_stage1_dgl_model.pt'
 model = myGNN(in_feats, 256, 128)
 model.load_state_dict(torch.load(model_path))
 model.to('cuda')
@@ -185,8 +185,8 @@ with torch.no_grad():
             ind_pose = ind.copy()
             ind_pose[0] = ind_pose[1]
             pose_embeddings = pose_embs[ind_pose]
-            embeddings = torch.cat((embs[ind], pose_embeddings), dim=1)
-            A, e = model(g, embeddings)
+            embeddings = embs[ind]
+            A, e = model(g, embeddings,pose_embeddings)
             train_pred_data_list.append((labels[0], A[0].cpu().numpy()))
 
         sorted_data = sorted(train_pred_data_list, key=lambda x: x[0])
@@ -209,9 +209,7 @@ with torch.no_grad():
 
             embeddings = torch.vstack((database_embs[ind[0]], embs[ind[1:]]))
             test_pose_embeddings =  pose_embs[ind_pose]
-            embeddings = torch.cat((embeddings,test_pose_embeddings),dim=1)
-
-            A, e = model(g, embeddings)
+            A, e = model(g, embeddings,test_pose_embeddings)
 
             test_pred_data_list.append((labels[0], A[0].cpu().numpy()))
 

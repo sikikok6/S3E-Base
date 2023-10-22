@@ -142,16 +142,16 @@ class MLP(nn.Module):
 class PoseReg(nn.Module):
     def __init__(self, in_feats, out_feats) -> None:
         super(PoseReg, self).__init__()
-        #self.linear1= nn.Linear(in_feats, out_feats)
-        self.linear1= nn.Sequential(nn.Linear(in_feats, 256),
-                                    nn.ReLU())
-        self.linear2= nn.Linear(256, out_feats)
+        self.linear1= nn.Linear(in_feats, out_feats)
+        # self.linear1= nn.Sequential(nn.Linear(in_feats, 256),
+        #                             nn.ReLU())
+        # self.linear2= nn.Linear(256, out_feats)
         
         
 
     def forward(self, f):
         h = self.linear1(f)
-        h = self.linear2(h)
+        # h = self.linear2(h)
         return h[:3],h[3:]
     
 class PoseLoss(nn.Module):
@@ -184,30 +184,43 @@ class PoseLoss(nn.Module):
         return loss, loss_x.item(), loss_q.item()
 
 
-
 class myGNN(nn.Module):
     def __init__(self, in_feats, h_feats, out_feats):
         super(myGNN, self).__init__()
 
-        self.MLP = MLP(2*in_feats, 1)
-        self.BN = nn.BatchNorm1d(2*in_feats)
-        self.conv1 = SAGEConv(2*in_feats, 2*in_feats, 'mean')
-
-        self.Encoder = nn.Sequential(nn.Linear(in_feats+7, 2*in_feats),
-                                     nn.ReLU())
+        self.MLP = MLP(512, 1)
         
+        self.conv1 = SAGEConv(512, 256, 'mean')
+
+        self.mlp2 = nn.Sequential(nn.Linear(in_feats, 256),
+                                  nn.ReLU(),
+                                  nn.Linear(256, 128),
+                                  nn.ReLU())
+
+        self.mlp3 = nn.Sequential(nn.Linear(7, 32),
+                                  nn.ReLU(),
+                                  nn.Linear(32, 64),
+                                  nn.ReLU(),
+                                  nn.Linear(64, 128),
+                                  nn.ReLU())
+
+        self.Encoder = nn.Sequential(nn.Linear(256, 512),
+                                     nn.ReLU()
+                                     )
+
 
     def apply_edges(self, edges):
         h_u = edges.src['x']
         h_v = edges.dst['x']
+        # score = self.MLP(torch.cat((h_u, h_v), 1))
         score = self.MLP(h_u - h_v)
         return {'score': score}
 
-    def forward(self, g, x):
+    def forward(self, g, x, x_pose):
 
-        x = self.Encoder(x)
-
-        x = self.BN(x)
+        x = self.mlp2(x)
+        x_pose = self.mlp3(x_pose)
+        x = self.Encoder(torch.cat((x, x_pose), dim=1))
 
         with g.local_scope():
             g.ndata['x'] = x
@@ -215,19 +228,11 @@ class myGNN(nn.Module):
             e = g.edata['score']
 
         A = self.conv1(g, x, e)
-        # A = self.conv1(g, x)
 
         A = F.leaky_relu(A)
         A = F.normalize(A, dim=1)
-
-
-        # A = A[:,:512]
-        # A = F.leaky_relu(A)
-        # A = F.normalize(A, dim=1)
         # pred2, A2 = self.conv2(g, pred)
-
-        return A, e
-
+        return A, e,
 
 class ListDict(object):
     def __init__(self, items=None):

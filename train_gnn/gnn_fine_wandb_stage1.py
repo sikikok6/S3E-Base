@@ -73,12 +73,12 @@ mink_model, params = load_minkLoc_model(
 mink_model.to(device)
 
 '''If Not Save,Run'''
-embs = np.array(get_embeddings_3d(
-    mink_model, params, project_args, 'cuda', 'train'))
-np.save('./gnn_pre_train_embeddings.npy', embs)
-test_embs = np.array(get_embeddings_3d(
-    mink_model, params, project_args, 'cuda', 'test'))
-np.save('./gnn_pre_test_embeddings.npy', test_embs)
+# embs = np.array(get_embeddings_3d(
+#     mink_model, params, project_args, 'cuda', 'train'))
+# np.save('./gnn_pre_train_embeddings.npy', embs)
+# test_embs = np.array(get_embeddings_3d(
+#     mink_model, params, project_args, 'cuda', 'test'))
+# np.save('./gnn_pre_test_embeddings.npy', test_embs)
 
 
 # load dataloaders
@@ -229,15 +229,14 @@ with tqdm.tqdm(range(100), position=0, desc='epoch', ncols=60) as tbar:
                     ind_pose = ind.copy()
                     ind_pose[0] = ind_pose[1]
                     pose_embeddings = pose_embs[ind_pose]
+                    embeddings = embs[ind]
+                    A, e = model(g, embeddings,pose_embeddings)
 
                     indx = torch.tensor(ind).view((-1,))[dst[:len(labels) - 1]]
                     indy = torch.tensor(ind)[src[:len(labels) - 1]]
                     # embeddings = embs[ind]
-                    embeddings = torch.cat((embs[ind], pose_embeddings), dim=1)
                     gt_iou = gt[indx, indy].view((-1, 1))
                     gt_iou_ = iou[indx, indy].view((-1, 1)).cuda()
-
-                    A, e = model(g, embeddings)
 
                     query_embeddings = torch.repeat_interleave(
                         A[0].unsqueeze(0), len(labels) - 1, 0)
@@ -371,9 +370,8 @@ with tqdm.tqdm(range(100), position=0, desc='epoch', ncols=60) as tbar:
 
                         embeddings = torch.vstack((database_embs[ind[0]], embs[ind[1:]]))
                         test_pose_embeddings = pose_embs[ind_pose]
-                        embeddings = torch.cat((embeddings, test_pose_embeddings), dim=1)
 
-                        A, e, = model(g, embeddings)
+                        A, e, = model(g, embeddings,test_pose_embeddings)
                         
                         database_embeddings = A[1:len(labels)]
 
