@@ -177,9 +177,10 @@ class myGNN(nn.Module):
 
     def forward(self, g, x, x_pose):
 
+        batch_size = len(x)
         x = self.mlp2(x)
         x_pose = self.mlp3(x_pose)
-        x = self.Encoder(torch.cat((x, x_pose), dim=1))
+        x = self.Encoder(torch.cat((x, x_pose), dim=2)).view((-1, 256))
 
         # x = self.BN(x)
 
@@ -188,15 +189,15 @@ class myGNN(nn.Module):
             g.apply_edges(self.apply_edges)
             e = g.edata['score']
 
-        A = self.conv1(g, x, e)
+        A = self.conv1(g, x, e).view((batch_size, 51, -1))
         # A = self.conv1(g, x)
 
         est_pose = self.Decoder(A)
 
         # est_pose = A[0, 512:]
 
-        pos_out = est_pose[0, :3]
-        ori_out = est_pose[0, 3:]
+        pos_out = est_pose[:, 0, :3]
+        ori_out = est_pose[:, 0,  3:]
 
         # A = A[:, :512]
 
@@ -205,42 +206,6 @@ class myGNN(nn.Module):
         A = F.normalize(A, dim=1)
         # pred2, A2 = self.conv2(g, pred)
         return A, e, pos_out, ori_out
-
-
-class ListDict(object):
-    def __init__(self, items=None):
-        if items is not None:
-            self.items = copy.deepcopy(items)
-            self.item_to_position = {
-                item: ndx for ndx, item in enumerate(items)}
-        else:
-            self.items = []
-            self.item_to_position = {}
-
-    def add(self, item):
-        if item in self.item_to_position:
-            return
-        self.items.append(item)
-        self.item_to_position[item] = len(self.items)-1
-
-    def remove(self, item):
-        position = self.item_to_position.pop(item)
-        last_item = self.items.pop()
-        if position != len(self.items):
-            self.items[position] = last_item
-            self.item_to_position[last_item] = position
-
-    def choose_random(self):
-        return random.choice(self.items)
-
-    def __contains__(self, item):
-        return item in self.item_to_position
-
-    def __iter__(self):
-        return iter(self.items)
-
-    def __len__(self):
-        return len(self.items)
 
 
 def split_batch(lst, batch_size):
@@ -294,56 +259,6 @@ class BatchSampler(Sampler):
             self.batch_idx.append(ndx)
         self.batch_idx = split_batch(self.batch_idx, self.batch_size)
 
-    def generate_batches(self):
-        # Generate training/evaluation batches.
-        # batch_idx holds indexes of elements in each batch as a list of lists
-        self.batch_idx = []
-
-        unused_elements_ndx = ListDict(self.elems_ndx)
-        current_batch = []
-
-        assert self.k == 2, 'sampler can sample only k=2 elements from the same class'
-
-        while True:
-            if len(current_batch) >= self.batch_size or len(unused_elements_ndx) == 0:
-                # Flush out batch, when it has a desired size, or a smaller batch, when there's no more
-                # elements to process
-                if len(current_batch) >= 2*self.k:
-                    # Ensure there're at least two groups of similar elements, otherwise, it would not be possible
-                    # to find negative examples in the batch
-                    assert len(current_batch) % self.k == 0, 'Incorrect bach size: {}'.format(
-                        len(current_batch))
-                    self.batch_idx.append(current_batch)
-                    current_batch = []
-                    if (self.max_batches is not None) and (len(self.batch_idx) >= self.max_batches):
-                        break
-                if len(unused_elements_ndx) == 0:
-                    break
-
-            # Add k=2 similar elements to the batch
-            selected_element = unused_elements_ndx.choose_random()
-            unused_elements_ndx.remove(selected_element)
-            positives = self.dataset.get_positives(selected_element)
-            if len(positives) == 0:
-                # Broken dataset element without any positives
-                continue
-
-            unused_positives = [
-                e for e in positives if e in unused_elements_ndx]
-            # If there're unused elements similar to selected_element, sample from them
-            # otherwise sample from all similar elements
-            if len(unused_positives) > 0:
-                second_positive = random.choice(unused_positives)
-                unused_elements_ndx.remove(second_positive)
-            else:
-                second_positive = random.choice(list(positives))
-
-            current_batch += [selected_element, second_positive]
-
-        for batch in self.batch_idx:
-            assert len(batch) % self.k == 0, 'Incorrect bach size: {}'.format(
-                len(batch))
-
 
 class PoseLoss(nn.Module):
     def __init__(self, sx=0.0, sq=0.0, learn_beta=False):
@@ -387,46 +302,6 @@ def in_sorted_array(e: int, array: np.ndarray) -> bool:
         # return True
 
 
-def make_collate_fn(dataset: ScanNetDataset, mink_quantization_size=None):
-    # set_transform: the transform to be applied to all batch elements
-    def collate_fn(data_list):
-        # Constructs a batch object
-        clouds = [e[0] for e in data_list]
-        labels = [e[1] for e in data_list]
-        # Produces (batch_size, n_points, 3) tensor
-        batch = torch.stack(clouds, dim=0)
-        if dataset.set_transform is not None:
-            # Apply the same transformation on all dataset elements
-            batch = dataset.set_transform(batch)
-
-        if mink_quantization_size is None:
-            # Not a MinkowskiEngine based model
-            batch = {'cloud': batch}
-        else:
-            coords = [ME.utils.sparse_quantize(coordinates=e, quantization_size=mink_quantization_size)
-                      for e in batch]
-            coords = ME.utils.batched_coordinates(coords)
-            # Assign a dummy feature equal to 1 to each point
-            # Coords must be on CPU, features can be on GPU - see MinkowskiEngine documentation
-            feats = torch.ones((coords.shape[0], 1), dtype=torch.float32)
-            batch = {'coords': coords, 'features': feats}
-
-        # Compute positives and negatives mask
-        # Compute positives and negatives mask
-        positives_mask = [[in_sorted_array(
-            e, dataset.queries[label].positives) for e in labels] for label in labels]
-        negatives_mask = [[not in_sorted_array(
-            e, dataset.queries[label].non_negatives) for e in labels] for label in labels]
-        positives_mask = torch.tensor(positives_mask)
-        negatives_mask = torch.tensor(negatives_mask)
-
-        # Returns (batch_size, n_points, 3) tensor and positives_mask and
-        # negatives_mask which are batch_size x batch_size boolean tensors
-        return batch, positives_mask, negatives_mask, labels
-
-    return collate_fn
-
-
 def make_smoothap_collate_fn(dataset: ScanNetDataset, mink_quantization_size=None, val=None):
     # set_transform: the transform to be applied to all batch elements
 
@@ -440,54 +315,73 @@ def make_smoothap_collate_fn(dataset: ScanNetDataset, mink_quantization_size=Non
         hard_positives_mask = []
         negatives_mask = []
         most_positives_mask = []
-        labels = [e[1] for e in data_list]
+
+        positives_masks = []
+        hard_positives_masks = []
+        negatives_masks = []
+        most_positives_masks = []
+
+        labels = [[e[1]] for e in data_list]
 
         # dataset.queries[labels[0]]
 
         if val != 'val':
-            labels.extend(train_sim_mat[labels[0]][1:num+1])
-            positives_mask = [in_sorted_array(
-                e, dataset.queries[labels[0]].positives) for e in labels]
-            hard_positives_mask = [in_sorted_array(
-                e, dataset.queries[labels[0]].hard_positives) for e in labels]
-            positives_mask[0] = True
-            negatives_mask = [not item for item in positives_mask]
-            positives_mask = torch.tensor([positives_mask])
-            negatives_mask = torch.tensor([negatives_mask])
-            hard_positives_mask = torch.tensor([hard_positives_mask])
-            most_positives_mask = [in_sorted_array(
-                e, dataset.queries[labels[0]].most_positive) for e in labels]
-            most_positives_mask = torch.tensor([most_positives_mask])
+            for i in range(len(labels)):
+                labels[i].extend(train_sim_mat[labels[i][0]][1:num+1])
+                positives_mask = [in_sorted_array(
+                    e, dataset.queries[labels[i][0]].positives) for e in labels[i]]
+                hard_positives_mask = [in_sorted_array(
+                    e, dataset.queries[labels[i][0]].hard_positives) for e in labels[i]]
+                positives_mask[0] = True
+                negatives_mask = [not item for item in positives_mask]
+                positives_masks.append(positives_mask)
+                negatives_masks.append(negatives_mask)
+                hard_positives_masks.append(hard_positives_mask)
+                # positives_mask = torch.tensor([positives_mask])
+                # negatives_mask = torch.tensor([negatives_mask])
+                # hard_positives_mask = torch.tensor([hard_positives_mask])
+                most_positives_mask = [in_sorted_array(
+                    e, dataset.queries[labels[i][0]].most_positive) for e in labels[i]]
+                # most_positives_mask = torch.tensor([most_positives_mask])
+                most_positives_masks.append(most_positives_mask)
         else:
+            for i in range(len(labels)):
 
-            labels.extend(query_sim_mat[labels[0]][:num])
-            positives_mask = [in_sorted_array(
-                e, dataset.queries[labels[0]].positives) for e in labels]
-            # hard_positives_mask = [in_sorted_array(
-            #     e, dataset.queries[labels[0]].hard_positives) for e in labels]
-            positives_mask[0] = True
-            negatives_mask = [not item for item in positives_mask]
-            positives_mask = torch.tensor([positives_mask])
-            negatives_mask = torch.tensor([negatives_mask])
-            hard_positives_mask = torch.tensor([hard_positives_mask])
-            most_positives_mask = [in_sorted_array(
-                e, dataset.queries[labels[0]].most_positive) for e in labels]
-            most_positives_mask = torch.tensor([most_positives_mask])
+                labels.extend(query_sim_mat[labels[i][0]][:num])
+                positives_mask = [in_sorted_array(
+                    e, dataset.queries[labels[i][0]].positives) for e in labels[i]]
+                # hard_positives_mask = [in_sorted_array(
+                #     e, dataset.queries[labels[0]].hard_positives) for e in labels]
+                positives_mask[0] = True
+                negatives_mask = [not item for item in positives_mask]
+                positives_masks.append(positives_mask)
+                negatives_masks.append(negatives_mask)
+                hard_positives_masks.append(hard_positives_mask)
+                # positives_mask = torch.tensor([positives_mask])
+                # negatives_mask = torch.tensor([negatives_mask])
+                # hard_positives_mask = torch.tensor([hard_positives_mask])
+                most_positives_mask = [in_sorted_array(
+                    e, dataset.queries[labels[i][0]].most_positive) for e in labels[i]]
+                most_positives_mask = torch.tensor([most_positives_mask])
+                most_positives_masks.append(most_positives_mask)
 
         neighbours = []
         if val == 'val':
-            neighbours.append(query_sim_mat[labels[0]][:num])
-            neighbours_temp = [database_sim_mat[item][1:num+1]
-                               for item in labels[1:]]
-            neighbours.extend(neighbours_temp)
+            for i in labels:
+                neighbours.append(query_sim_mat[i[0]][:num])
+            # neighbours_temp = [database_sim_mat[item][1:num+1]
+            #                    for item in labels[1:]]
+            # neighbours.extend(neighbours_temp)
 
         else:
             # neighbours = [dataset.get_neighbours(item)[:10] for item in labels]
+            # for i in labels[:1]:
+            #     temp = train_sim_mat[i][1:num+1]
             for i in labels:
-                temp = train_sim_mat[i][1:num+1]
+                neighbours.append(train_sim_mat[i[0]][:num])
 
-                neighbours.append(temp)
-        return positives_mask, negatives_mask, hard_positives_mask, labels, neighbours, most_positives_mask, None
+            # neighbours.append(temp)
+        return torch.tensor(positives_masks), torch.tensor(negatives_masks), torch.tensor(hard_positives_masks), labels, neighbours, torch.tensor(most_positives_masks), None
 
     return collate_fn
 

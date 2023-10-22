@@ -183,9 +183,10 @@ pose_loss = PoseLoss().to('cuda')
 pose_loss.eval()
 
 pdist = nn.PairwiseDistance(p=2)
-cos = nn.CosineSimilarity(dim=1).cuda()
+cos = nn.CosineSimilarity(dim=2).cuda()
 
 max_ = 0.
+node_nums = 50
 # labels = range(len(feat))
 with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
     for epoch in tbar:
@@ -214,13 +215,15 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
             # dst = np.repeat(
             #     list(range(51)), 51 - 1)
 
-            src = np.array(list(range(1, 51)))
-            dst = np.repeat(list(range(1)), 50)
+            src = np.array(list(range(1, node_nums+1)))
+            dst = np.repeat(list(range(1)), node_nums)
 
             g = dgl.graph((src, dst))
             g = g.to('cuda')
 
             for pos_mask, neg_mask, hard_pos_mask, labels, neighbours, most_pos_mask, batch in tbar2:
+                g_arr = [g] * len(pos_mask)
+                g_batch = dgl.batch(g_arr)
                 torch.cuda.empty_cache()
                 cnt += 1
                 model.train()
@@ -228,29 +231,34 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                 with torch.enable_grad():
                     # batch = {e: batch[e].to(device) for e in batch}
 
-                    ind = [labels[0]]
-                    ind.extend(np.vstack(neighbours).reshape((-1,)).tolist())
+                    # ind = [labels[0]]
+                    # ind.extend(np.vstack(neighbours).reshape((-1,)).tolist())
+                    ind = torch.tensor(labels)
 
                     '''Key Here To Change Poses For Query'''
-                    ind_pose = ind.copy()
-                    ind_pose[0] = ind_pose[1]
-                    pose_embeddings = pose_embs[ind_pose[:51]]
+                    ind_pose = torch.tensor(labels)
+                    ind_pose[:, 0] = ind_pose[:, 1]
+                    pose_embeddings = pose_embs[ind_pose[:, :node_nums+1]]
 
-                    indx = torch.tensor(ind).view((-1,))[dst[:len(labels) - 1]]
-                    indy = torch.tensor(ind)[src[:len(labels) - 1]]
+                    indx = ind[..., dst]
+                    indy = ind[..., src]
+
                     # embeddings = embs[ind]
                     # embeddings = torch.cat((embs[ind], pose_embeddings), dim=1)
-                    embeddings = embs[ind[:51]]
+                    embeddings = embs[ind]
                     gt_iou = gt[indx, indy].view((-1, 1))
                     gt_iou_ = iou[indx, indy].view((-1, 1)).cuda()
 
                     A, e, pos_pred, ori_pred = model(
-                        g, embeddings, pose_embeddings)
+                        g_batch, embeddings, pose_embeddings)
 
                     query_embeddings = torch.repeat_interleave(
-                        A[0].unsqueeze(0), len(labels) - 1, 0)
-                    database_embeddings = A[1:len(labels)]
+                        A[:, 0], node_nums, 0).view((len(pos_mask), node_nums, -1))
+
+                    database_embeddings = A[:, 1:node_nums + 1]
+
                     sim_mat = cos(query_embeddings, database_embeddings)
+                    print(sim_mat.shape)
                     # sim_mat = nn.functional.normalize(sim_mat, 2, 0)
                     d1 = database_embeddings.repeat(
                         1, len(database_embeddings), 1).squeeze()
