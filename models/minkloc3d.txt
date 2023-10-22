@@ -1,6 +1,6 @@
 # MinkLoc3D model
 [MODEL]
-model = MinkLocMultimodal
+model = MinkLoc3D
 mink_quantization_size = 0.01
 planes = 32,64,64
 layers = 1,1,1

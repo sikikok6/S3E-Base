@@ -2,7 +2,7 @@
 [DEFAULT]
 num_points = 4096
 use_cloud = True
-use_rgb = True
+use_rgb = False
 
 dataset_folder = /home/ubuntu-user/S3E-backup/datasetfiles/datasets/fire/
 image_path = /home/ubuntu-user/S3E-backup/datasetfiles/datasets/fire/color

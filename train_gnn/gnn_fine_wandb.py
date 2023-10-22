@@ -74,6 +74,7 @@ mink_model.to(device)
 '''If Not Save,Run'''
 # embs = np.array(get_embeddings_3d(
 #     mink_model, params, project_args, 'cuda', 'train'))
+# print(embs.shape)
 # np.save('./gnn_pre_train_embeddings.npy', embs)
 # test_embs = np.array(get_embeddings_3d(
 #     mink_model, params, project_args, 'cuda', 'test'))
@@ -146,7 +147,7 @@ model = myGNN(in_feats, 256, 128)
 model.to('cuda')
 
 opt = torch.optim.Adam(
-    [{'params': model.parameters(), 'lr': 0.0001, 'weight_decay': 0.001}])
+    [{'params': model.parameters(), 'lr': 0.0005, 'weight_decay': 0.001}])
 loss = None
 recall = None
 smoothap = SmoothAP()
@@ -334,7 +335,7 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                     #     smoothap(sim_mat, pos_mask) + loss_affinity_1)
 
                     loss += losses[-1].item()
-                    if cnt % 16 == 0 or cnt == len(train_iou):
+                    if cnt % 32 == 0 or cnt == len(train_iou):
                         a = torch.vstack(losses)
                         a = torch.where(torch.isnan(
                             a), torch.full_like(a, 0), a)
