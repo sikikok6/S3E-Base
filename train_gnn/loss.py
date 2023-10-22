@@ -145,7 +145,48 @@ class SmoothAP(torch.nn.Module):
         Returns:
             _type_: _description_
         """
+
+        sim_mask = sim_all
+        pos_mask = pos_mask_[:, 1:].to('cuda')
+        neg_mask = (~pos_mask).to(torch.float).to('cuda')
+        # rel = most_pos[:, 1:].to(torch.float).to('cuda')
+        rel = pos_mask_[:, 1:].to(torch.float).to('cuda')
+
+        sort_ind = torch.argsort(-sim_mask)
+        neg_mask = torch.gather(neg_mask, dim=1, index=sort_ind)
+        # neg_mask = neg_mask.gather [sort_ind.unsqueeze(0)]
+        # ndcg_neg = self.ndcg(neg_mask, neg_mask)
+        rel = torch.gather(rel, dim=1, index=sort_ind)
+        # rel[0] = rel[0][sort_ind]
+        # ndcg = self.ndcg(rel, rel)
+        if torch.sum(pos_mask) == 0:
+            return torch.tensor(0.0001, requires_grad=True).cuda()
+
+        # d = sim_mask.squeeze().unsqueeze(0)
+        d = sim_mask
+        d_repeat = d.repeat_interleave(sim_mask.shape[1], 0).view(
+            sim_mask.shape[0], sim_mask.shape[1], sim_mask.shape[1])
+        D = d_repeat - d_repeat.transpose(1, 2)
+        D = sigmoid(D, 0.001)
+        D_ = D * (1 - torch.eye(sim_mask.shape[1])).to('cuda')
+        pos_mask_repeat = pos_mask.repeat_interleave(sim_mask.shape[1], 0).view(
+            sim_mask.shape[0], sim_mask.shape[1], sim_mask.shape[1])
+        D_pos = D_ * pos_mask_repeat
+
+        R = 1 + torch.sum(D_, 2)
+        R_pos = (1 + torch.sum(D_pos, 2)) * pos_mask
+        R_neg = R - R_pos
+        R = R_neg + R_pos
+
+        ap = torch.zeros(sim_mask.shape[0], requires_grad=True).cuda()
+        ap_ = (1 / torch.sum(pos_mask, 1)) * torch.sum(R_pos / R, 1)
+
+        ap = ap + ap_
+
+        return ap
         # sim_mask = sim_all[1:]
+        '''
+
         sim_mask = sim_all
         pos_mask = pos_mask_[:, 1:].to('cuda')
         neg_mask = (~pos_mask).to(torch.float).to('cuda')
@@ -178,6 +219,4 @@ class SmoothAP(torch.nn.Module):
         ap = ap + ap_
 
         return ap
-
-
-
+        '''

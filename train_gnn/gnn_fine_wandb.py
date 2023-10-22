@@ -258,40 +258,33 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                     database_embeddings = A[:, 1:node_nums + 1]
 
                     sim_mat = cos(query_embeddings, database_embeddings)
-                    print(sim_mat.shape)
-                    # sim_mat = nn.functional.normalize(sim_mat, 2, 0)
-                    d1 = database_embeddings.repeat(
-                        1, len(database_embeddings), 1).squeeze()
-                    d2 = database_embeddings.repeat_interleave(
-                        len(database_embeddings), 0)
-                    database_sim_mat = cos(d1, d2).view(
-                        (len(database_embeddings), len(database_embeddings)))
-                    # sim_mat[sim_mat < 0] = 0
-                    # sim_mat = torch.matmul(query_embs, database_embs.T).squeeze()
 
                     loss_affinity_1 = criterion(
-                        e[:len(labels) - 1], gt_iou.cuda())
+                        e[:, :node_nums].view(-1, node_nums, 1), gt_iou.view(-1, node_nums, 1).cuda())
 
-                    hard_sim_mat = sim_mat[pos_mask.squeeze()[1:]]
-                    hard_pos_mask[0][0] = True
-                    hard_p_mask = hard_pos_mask[pos_mask].unsqueeze(0)
+                    # print(pos_mask.shape)
+                    # hard_sim_mat = sim_mat[pos_mask[:, 1:]]
+                    # print(hard_sim_mat.shape)
+                    # hard_pos_mask[:, 0] = True
+                    # hard_p_mask = hard_pos_mask[pos_mask].unsqueeze(0)
 
                     ap_coarse = smoothap(sim_mat, pos_mask)
-                    ap_fine = smoothap(hard_sim_mat, hard_p_mask)
+
+                    # ap_fine = smoothap(hard_sim_mat, hard_p_mask)
 
                     # calculate poss loss
-                    gt_pose = pose_embs[labels[0]]
-                    pos_true = gt_pose[:3]
-                    ori_true = gt_pose[3:]
+                    gt_pose = pose_embs[ind[:, 0]]
+                    pos_true = gt_pose[:, :3]
+                    ori_true = gt_pose[:, 3:]
 
-                    ori_pred = F.normalize(ori_pred, p=2, dim=0)
-                    ori_true = F.normalize(ori_true, p=2, dim=0)
+                    ori_pred = F.normalize(ori_pred, p=2, dim=1)
+                    ori_true = F.normalize(ori_true, p=2, dim=1)
 
                     # loss_pos = F.mse_loss(pos_pred, pos_true)
                     # loss_ori = F.mse_loss(ori_pred, ori_true)
 
-                    loss_pose, loss_pos, loss_ori = pose_loss(pos_pred.unsqueeze(
-                        0), ori_pred.unsqueeze(0), pos_true.unsqueeze(0), ori_true.unsqueeze(0))
+                    loss_pose, loss_pos, loss_ori = pose_loss(
+                        pos_pred, ori_pred, pos_true, ori_true)
 
                     # alpha for mse1
                     alpha = 2
@@ -300,7 +293,8 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                     # gamma for pos and ori
                     gamma = 2
 
-                    train_loss_ap = 1 - (0.7*ap_coarse + 0.3*ap_fine)
+                    # train_loss_ap = 1 - (0.7*ap_coarse + 0.3*ap_fine)
+                    train_loss_ap = (1 - ap_coarse).mean()
                     train_loss_mse1 = loss_affinity_1
                     train_loss_pos = loss_pos
                     # Here have beta
@@ -324,7 +318,7 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                     trans_loss += trans_error
                     rotation_loss += rot_error
 
-                    train_loss_dic['ap'].append(train_loss_ap.item())
+                    train_loss_dic['ap'].append(train_loss_ap.mean().item())
                     train_loss_dic['mse1'].append(
                         alpha * train_loss_mse1.item())
                     train_loss_dic['pos'].append(train_loss_pos)

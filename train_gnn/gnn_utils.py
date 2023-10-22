@@ -610,21 +610,25 @@ def cal_trans_rot_error(pred_pose, gt_pose):
     :param gt_pose: Ground truth pose as [tx, ty, tz, qx, qy, qz, qw]
     :return: Translation error and rotation error in degrees
     """
-    pred_translation = pred_pose[:3]
-    gt_translation = gt_pose[:3]
+    pred_translation = pred_pose[:, :3]
+    gt_translation = gt_pose[:, :3]
 
-    pred_R = R.from_quat(pred_pose[3:]).as_matrix()
-    gt_R = R.from_quat(gt_pose[3:]).as_matrix()
+    pred_R_arr = [R.from_quat(pred_pose[i, 3:]).as_matrix()
+                  for i in range(len(pred_translation))]
+    gt_R_arr = [R.from_quat(gt_pose[i, 3:]).as_matrix()
+                for i in range(len(pred_translation))]
 
-    cal_R = pred_R.T @ gt_R
-    r = R.from_matrix(cal_R).as_rotvec()
-    rotation_error_deg = np.linalg.norm(r) * 180 / np.pi
-    translation_error = np.linalg.norm(pred_translation - gt_translation)
+    cal_R_arr = [pred_R_arr[i] @ gt_R_arr[i] for i in range(len(pred_R_arr))]
 
-    # print(f"translation_error:{translation_error}")
-    # print(f"rotation_error_deg:{rotation_error_deg}")
+    r_arr = [R.from_matrix(
+        cal_R_arr[i]).as_rotvec() for i in range(len(cal_R_arr))]
+    rotation_error_degs = [np.linalg.norm(
+        r_arr[i]) * 180 / np.pi for i in range(len(r_arr))]
 
-    return translation_error, rotation_error_deg
+    translation_errors = [np.linalg.norm(
+        pred_translation[i] - gt_translation[i]) for i in range(len(pred_translation))]
+
+    return np.mean(translation_errors), np.mean(rotation_error_degs)
 
 
 # def generate_test_poses(scene):
