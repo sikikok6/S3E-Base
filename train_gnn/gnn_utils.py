@@ -142,11 +142,16 @@ class MLP(nn.Module):
 class PoseReg(nn.Module):
     def __init__(self, in_feats, out_feats) -> None:
         super(PoseReg, self).__init__()
-        self.linear21= nn.Linear(in_feats, out_feats)
+        #self.linear1= nn.Linear(in_feats, out_feats)
+        self.linear1= nn.Sequential(nn.Linear(in_feats, 256),
+                                    nn.ReLU())
+        self.linear2= nn.Linear(256, out_feats)
+        
         
 
     def forward(self, f):
         h = self.linear1(f)
+        h = self.linear2(h)
         return h[:3],h[3:]
 
 
@@ -155,12 +160,12 @@ class myGNN(nn.Module):
     def __init__(self, in_feats, h_feats, out_feats):
         super(myGNN, self).__init__()
 
-        self.MLP = MLP(1024, 1)
-        # self.BN = nn.BatchNorm1d(2*in_feats)
-        self.conv1 = SAGEConv(1024, 512, 'mean')
+        self.MLP = MLP(2*in_feats, 1)
+        self.BN = nn.BatchNorm1d(2*in_feats)
+        self.conv1 = SAGEConv(2*in_feats, 2*in_feats, 'mean')
 
-        self.Encoder = (nn.Sequential(nn.Linear(512+7,1024),
-                                   nn.ReLU()))
+        self.Encoder = nn.Sequential(nn.Linear(in_feats+7, 2*in_feats),
+                                     nn.ReLU())
         
 
     def apply_edges(self, edges):
@@ -173,7 +178,7 @@ class myGNN(nn.Module):
 
         x = self.Encoder(x)
 
-        # x = self.BN(x)
+        x = self.BN(x)
 
         with g.local_scope():
             g.ndata['x'] = x
