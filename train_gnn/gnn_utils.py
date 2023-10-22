@@ -142,14 +142,11 @@ class MLP(nn.Module):
 class PoseReg(nn.Module):
     def __init__(self, in_feats, out_feats) -> None:
         super(PoseReg, self).__init__()
-        self.linear1 = nn.Sequential(nn.Linear(in_feats, 256),
-                       nn.Tanh())
-        self.linear2 = nn.Linear(256, out_feats)
+        self.linear21= nn.Linear(in_feats, out_feats)
         
 
     def forward(self, f):
-        f = self.linear1(f)
-        h = self.linear2(f)
+        h = self.linear1(f)
         return h[:3],h[3:]
 
 
