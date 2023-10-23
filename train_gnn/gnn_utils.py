@@ -188,23 +188,22 @@ class myGNN(nn.Module):
     def __init__(self, in_feats, h_feats, out_feats):
         super(myGNN, self).__init__()
 
-        self.MLP = MLP(512, 1)
+        self.MLP = MLP(1024, 1)
         
-        self.conv1 = SAGEConv(512, 256, 'mean')
+        self.conv1 = SAGEConv(1024, 1024, 'mean')
 
-        self.mlp2 = nn.Sequential(nn.Linear(in_feats, 256),
-                                  nn.ReLU(),
-                                  nn.Linear(256, 128),
-                                  nn.ReLU())
+        self.mlp2 = nn.Sequential(nn.Linear(128, 256),
+                                  nn.ReLU(),)
+                                 
 
-        self.mlp3 = nn.Sequential(nn.Linear(7, 32),
-                                  nn.ReLU(),
-                                  nn.Linear(32, 64),
+        self.mlp3 = nn.Sequential(nn.Linear(7, 64),
                                   nn.ReLU(),
                                   nn.Linear(64, 128),
+                                  nn.ReLU(),
+                                  nn.Linear(128, 256),
                                   nn.ReLU())
 
-        self.Encoder = nn.Sequential(nn.Linear(256, 512),
+        self.Encoder = nn.Sequential(nn.Linear(512, 1024),
                                      nn.ReLU()
                                      )
 
@@ -632,7 +631,7 @@ def load_data_item(file_name, params, project_params, fp):
     return result
 
 
-def get_embeddings_3d(model, params, project_params, device, scene):
+def get_embeddings_3d(model, params, project_params, device, scene,only_RGB = False):
 
     model.eval()
     embeddings_l = []
@@ -666,6 +665,11 @@ def get_embeddings_3d(model, params, project_params, device, scene):
 
             x = model(batch)
             embedding = x['embedding']
+            if(only_RGB):
+                embedding = x['image_embedding']
+                embedding = embedding[:,:128]
+
+
 
             # embedding is (1, 256) tensor
             # if params.normalize_embeddings:

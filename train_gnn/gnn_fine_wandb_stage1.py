@@ -73,12 +73,12 @@ mink_model, params = load_minkLoc_model(
 mink_model.to(device)
 
 '''If Not Save,Run'''
-# embs = np.array(get_embeddings_3d(
-#     mink_model, params, project_args, 'cuda', 'train'))
-# np.save('./gnn_pre_train_embeddings.npy', embs)
-# test_embs = np.array(get_embeddings_3d(
-#     mink_model, params, project_args, 'cuda', 'test'))
-# np.save('./gnn_pre_test_embeddings.npy', test_embs)
+embs = np.array(get_embeddings_3d(
+    mink_model, params, project_args, 'cuda', 'train',only_RGB=True))
+np.save('./gnn_pre_train_embeddings.npy', embs)
+test_embs = np.array(get_embeddings_3d(
+    mink_model, params, project_args, 'cuda', 'test',only_RGB=True))
+np.save('./gnn_pre_test_embeddings.npy', test_embs)
 
 
 # load dataloaders
