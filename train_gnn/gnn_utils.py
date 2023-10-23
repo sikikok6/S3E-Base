@@ -197,7 +197,7 @@ class myGNN(nn.Module):
         # est_pose = A[0, 512:]
 
         pos_out = est_pose[:, 0, :3]
-        ori_out = est_pose[:, 0,  3:]
+        ori_out = est_pose[:, 0, 3:]
 
         # A = A[:, :512]
 
@@ -276,7 +276,7 @@ class PoseLoss(nn.Module):
         self.loss_print = None
 
     def forward(self, pred_x, pred_q, target_x, target_q):
-        pred_q = F.normalize(pred_q, p=2, dim=1)
+        # pred_q = F.normalize(pred_q, p=2, dim=1)
         loss_x = F.l1_loss(pred_x, target_x)
         loss_q = F.l1_loss(pred_q, target_q)
 
@@ -347,7 +347,7 @@ def make_smoothap_collate_fn(dataset: ScanNetDataset, mink_quantization_size=Non
         else:
             for i in range(len(labels)):
 
-                labels.extend(query_sim_mat[labels[i][0]][:num])
+                labels[i].extend(query_sim_mat[labels[i][0]][:num])
                 positives_mask = [in_sorted_array(
                     e, dataset.queries[labels[i][0]].positives) for e in labels[i]]
                 # hard_positives_mask = [in_sorted_array(
@@ -362,13 +362,13 @@ def make_smoothap_collate_fn(dataset: ScanNetDataset, mink_quantization_size=Non
                 # hard_positives_mask = torch.tensor([hard_positives_mask])
                 most_positives_mask = [in_sorted_array(
                     e, dataset.queries[labels[i][0]].most_positive) for e in labels[i]]
-                most_positives_mask = torch.tensor([most_positives_mask])
+                # most_positives_mask = torch.tensor([most_positives_mask])
                 most_positives_masks.append(most_positives_mask)
 
         neighbours = []
         if val == 'val':
-            for i in labels:
-                neighbours.append(query_sim_mat[i[0]][:num])
+            for i in range(len(labels)):
+                neighbours.append(query_sim_mat[labels[i][0]][:num])
             # neighbours_temp = [database_sim_mat[item][1:num+1]
             #                    for item in labels[1:]]
             # neighbours.extend(neighbours_temp)
@@ -377,11 +377,20 @@ def make_smoothap_collate_fn(dataset: ScanNetDataset, mink_quantization_size=Non
             # neighbours = [dataset.get_neighbours(item)[:10] for item in labels]
             # for i in labels[:1]:
             #     temp = train_sim_mat[i][1:num+1]
-            for i in labels:
-                neighbours.append(train_sim_mat[i[0]][:num])
+            for i in range(len(labels)):
+                neighbours.append(train_sim_mat[labels[i][0]][:num])
 
             # neighbours.append(temp)
-        return torch.tensor(positives_masks), torch.tensor(negatives_masks), torch.tensor(hard_positives_masks), labels, neighbours, torch.tensor(most_positives_masks), None
+        valid_mask = torch.sum(torch.tensor(positives_masks), -1) != 1
+        positives_masks = torch.tensor(positives_masks)[valid_mask]
+        negatives_masks = torch.tensor(negatives_masks)[valid_mask]
+        hard_positives_masks = torch.tensor(hard_positives_masks)[valid_mask]
+        labels = torch.tensor(labels)[valid_mask]
+        neighbours = torch.tensor(neighbours)[valid_mask]
+        most_positives_masks = torch.tensor(most_positives_masks)[valid_mask]
+        return positives_masks, negatives_masks, hard_positives_masks, labels, neighbours, most_positives_masks, None
+
+        # return torch.tensor(positives_masks)[valid_mask], torch.tensor(negatives_masks)[valid_mask], torch.tensor(hard_positives_masks)[valid_mask], torch.tensor(labels)[valid_mask], torch.tensor(neighbours)[valid_mask], torch.tensor(most_positives_masks)[valid_mask], None
 
     return collate_fn
 
@@ -618,7 +627,7 @@ def cal_trans_rot_error(pred_pose, gt_pose):
     gt_R_arr = [R.from_quat(gt_pose[i, 3:]).as_matrix()
                 for i in range(len(pred_translation))]
 
-    cal_R_arr = [pred_R_arr[i] @ gt_R_arr[i] for i in range(len(pred_R_arr))]
+    cal_R_arr = [pred_R_arr[i].T @ gt_R_arr[i] for i in range(len(pred_R_arr))]
 
     r_arr = [R.from_matrix(
         cal_R_arr[i]).as_rotvec() for i in range(len(cal_R_arr))]
