@@ -133,7 +133,7 @@ gt = torch.tensor(gt)
 for i in train_iou:
     gt[i][i] = 1.
     for p in train_iou[i].positives:
-        gt[i][p] = 1.
+        gt[i][p] = iou[i][p]
 
 
 if params.model_params.model == "MinkLocMultimodal":

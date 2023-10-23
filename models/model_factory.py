@@ -20,14 +20,14 @@ def model_factory(params: MinkLocParams):
         #                    conv0_kernel_size=5, block='ECABasicBlock', pooling_method='GeM')
 
         cloud_fe = MinkLoc('MinkFPN_GeM', in_channels=in_channels,
-                        feature_size=256,
-                        output_dim=256, planes=[32,64,64],
-                        layers=[1,1,1], num_top_down=1,
-                        conv0_kernel_size=5)
+                           feature_size=256,
+                           output_dim=256, planes=[32, 64, 64],
+                           layers=[1, 1, 1], num_top_down=1,
+                           conv0_kernel_size=5)
         image_fe_size = 128
 
         image_fe = Resnet3DFPN_df(out_channels=image_fe_size, lateral_dim=image_fe_size,
-                               fh_num_bottom_up=4, fh_num_top_down=0)
+                                  fh_num_bottom_up=4, fh_num_top_down=0)
 
         model = MinkLocMultimodal(cloud_fe, cloud_fe_size, image_fe,
                                   image_fe_size, output_dim=cloud_fe_size + image_fe_size + image_fe_size)
@@ -37,22 +37,22 @@ def model_factory(params: MinkLocParams):
         #                    planes=[32, 64, 64], layers=[1, 1, 1], num_top_down=1,
         #                    conv0_kernel_size=5, block='ECABasicBlock', pooling_method='GeM')
         cloud_fe = MinkLoc('MinkFPN_GeM', in_channels=in_channels,
-                        feature_size=256,
-                        output_dim=256, planes=[32,64,64],
-                        layers=[1,1,1], num_top_down=1,
-                        conv0_kernel_size=5)
+                           feature_size=256,
+                           output_dim=256, planes=[32, 64, 64],
+                           layers=[1, 1, 1], num_top_down=1,
+                           conv0_kernel_size=5)
         model = MinkLocMultimodal(cloud_fe, cloud_fe_size, None, 0, output_dim=cloud_fe_size,
                                   dropout_p=None)
     elif params.model_params.model == 'MinkLocRGB':
-        image_fe_size = 128
+        image_fe_size = 256
         # image_fe =  ResnetFPN_vlad(image_fe_size, image_fe_size)
         # image_fe = ResnetFPN_T(128, 128)
         # image_fe = Resnet3DFPN(out_channels=image_fe_size, lateral_dim=image_fe_size,
         #                        fh_num_bottom_up=4, fh_num_top_down=3)
-        image_fe = Resnet3DFPN_df(out_channels=image_fe_size, lateral_dim=image_fe_size,
-                               fh_num_bottom_up=4, fh_num_top_down=0)
-        # image_fe = ResnetFPN(out_channels=image_fe_size, lateral_dim=image_fe_size,
-        #                     fh_num_bottom_up=4, fh_num_top_down=0)
+        # image_fe = Resnet3DFPN_df(out_channels=image_fe_size, lateral_dim=image_fe_size,
+        #                        fh_num_bottom_up=4, fh_num_top_down=0)
+        image_fe = ResnetFPN(out_channels=image_fe_size, lateral_dim=image_fe_size,
+                             fh_num_bottom_up=4, fh_num_top_down=0)
         model = MinkLocMultimodal(
             None, 0, image_fe, image_fe_size, output_dim=image_fe_size)
     else:

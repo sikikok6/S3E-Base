@@ -464,14 +464,14 @@ def make_dataloader(params, project_params):
 
     dataloaders = {}
     train_sampler = BatchSampler(
-        datasets['train'], batch_size=16, type='train')
+        datasets['train'], batch_size=32, type='train')
     # Collate function collates items into a batch and applies a 'set transform' on the entire batch
     train_collate_fn = make_smoothap_collate_fn(datasets['train'],  0.01)
     dataloaders['train'] = DataLoader(datasets['train'], batch_sampler=train_sampler, collate_fn=train_collate_fn,
                                       num_workers=params.num_workers, pin_memory=False)
 
     if 'val' in datasets:
-        val_sampler = BatchSampler(datasets['val'], batch_size=16, type='val')
+        val_sampler = BatchSampler(datasets['val'], batch_size=64, type='val')
         # Collate function collates items into a batch and applies a 'set transform' on the entire batch
         # Currently validation dataset has empty set_transform function, but it may change in the future
         val_collate_fn = make_smoothap_collate_fn(datasets['val'], 0.01, 'val')
