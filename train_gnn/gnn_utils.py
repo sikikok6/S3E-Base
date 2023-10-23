@@ -188,9 +188,11 @@ class myGNN(nn.Module):
     def __init__(self, in_feats, h_feats, out_feats):
         super(myGNN, self).__init__()
 
-        self.MLP = MLP(1024, 1)
+        self.MLP = MLP(256, 1)
         
-        self.conv1 = SAGEConv(1024, 1024, 'mean')
+        self.conv1 = SAGEConv(256, 512, 'mean')
+
+        self.BN = nn.BatchNorm1d(256)
 
         self.mlp2 = nn.Sequential(nn.Linear(128, 256),
                                   nn.ReLU(),)
@@ -203,7 +205,7 @@ class myGNN(nn.Module):
                                   nn.Linear(128, 256),
                                   nn.ReLU())
 
-        self.Encoder = nn.Sequential(nn.Linear(512, 1024),
+        self.Encoder = nn.Sequential(nn.Linear(128+7, 256),
                                      nn.ReLU()
                                      )
 
@@ -215,11 +217,12 @@ class myGNN(nn.Module):
         score = self.MLP(h_u - h_v)
         return {'score': score}
 
-    def forward(self, g, x, x_pose):
+    def forward(self, g, x):
 
-        x = self.mlp2(x)
-        x_pose = self.mlp3(x_pose)
-        x = self.Encoder(torch.cat((x, x_pose), dim=1))
+        x = self.Encoder(x)
+
+        x = self.BN(x)
+
 
         with g.local_scope():
             g.ndata['x'] = x

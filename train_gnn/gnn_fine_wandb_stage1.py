@@ -229,8 +229,8 @@ with tqdm.tqdm(range(100), position=0, desc='epoch', ncols=60) as tbar:
                     ind_pose = ind.copy()
                     ind_pose[0] = ind_pose[1]
                     pose_embeddings = pose_embs[ind_pose]
-                    embeddings = embs[ind]
-                    A, e = model(g, embeddings,pose_embeddings)
+                    embeddings =  torch.cat((embs[ind],pose_embeddings),dim=1)
+                    A, e = model(g, embeddings)
 
                     indx = torch.tensor(ind).view((-1,))[dst[:len(labels) - 1]]
                     indy = torch.tensor(ind)[src[:len(labels) - 1]]
@@ -371,7 +371,9 @@ with tqdm.tqdm(range(100), position=0, desc='epoch', ncols=60) as tbar:
                         embeddings = torch.vstack((database_embs[ind[0]], embs[ind[1:]]))
                         test_pose_embeddings = pose_embs[ind_pose]
 
-                        A, e, = model(g, embeddings,test_pose_embeddings)
+                        embeddings = torch.cat((embeddings,test_pose_embeddings),dim=1)
+
+                        A, e, = model(g, embeddings)
                         
                         database_embeddings = A[1:len(labels)]
 
