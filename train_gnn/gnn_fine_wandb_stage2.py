@@ -135,7 +135,7 @@ for i in train_iou:
         gt[i][p] = 1.
 
 model_path = '/home/ubuntu-user/S3E-backup/train_gnn/savemodel/'+time_string+'_stage2_dgl_model.pt'
-model = PoseReg(128,7)
+model = PoseReg(512,7)
 model.to('cuda')
 
 pose_loss = PoseLoss().to('cuda')
