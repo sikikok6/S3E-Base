@@ -77,8 +77,8 @@ class ScanNetDataset(Dataset):
             #                   self.image_ext, self.lidar2image_ndx, k=None)
             img = Image.open(os.path.join(
                 self.image_path, filename.split('/')[-1].replace('bin', 'color.png')))
-            # if self.image_transform is not None:
-            #     img = self.image_transform(img)
+            if self.image_transform is not None:
+                img = self.image_transform(img)
             # query_img = Image.open(query_filename).convert('RGB')
             result['image'] = img
 

@@ -79,9 +79,9 @@ class MinkLocParams:
             # self.eval_database_files = ['oxford_evaluation_database.pickle']
             # self.eval_query_files = ['oxford_evaluation_query.pickle']
             self.eval_database_files = [
-                'pickle/'+scene+'_evaluation_database.pickle']
+                'pickle/'+scene+'fire_evaluation_database.pickle']
             self.eval_query_files = ['pickle/' +
-                                     scene+'_evaluation_query.pickle']
+                                     scene+'fire_evaluation_query.pickle']
         else:
             # LiDAR only training and evaluation
             # Evaluate on Oxford and InHouse datasets

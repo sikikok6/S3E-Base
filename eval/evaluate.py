@@ -72,19 +72,28 @@ def evaluate_dataset(model, device, params, database_sets, query_sets, silent=Tr
     # for set in tqdm.tqdm(database_sets, disable=silent):
     #     database_embeddings.append(
     #         get_latent_vectors(model, set, device, params))
-    #
-    # data = {}
-    #
+    # #
+    # # data = {}
+    # #
     # for set in tqdm.tqdm(query_sets, disable=silent):
     #     query_embeddings.append(get_latent_vectors(model, set, device, params))
-    embedding_dir = '/home/ubuntu-user/S3E-backup/datasetfiles/datasets/fire/npy'
-    emb_files = os.listdir(embedding_dir)
-    emb_files.sort()
-    embeddings = []
-    for e in tqdm.tqdm(emb_files):
-        embeddings.append(np.load(os.path.join(embedding_dir, e))[0].tolist())
-    database_embeddings = [embeddings[:1000]]
-    query_embeddings = [embeddings[1000:]]
+    # # embedding_dir = '/home/ubuntu-user/S3E-backup/datasetfiles/datasets/fire/npy'
+    # emb_files = os.listdir(embedding_dir)
+    # emb_files.sort()
+    # embeddings = []
+    # for e in tqdm.tqdm(emb_files):
+    #     embeddings.append(np.load(os.path.join(embedding_dir, e))[0].tolist())
+    # database_embeddings = [embeddings[:1000]]
+    # query_embeddings = [embeddings[1000:]]
+
+    for set in tqdm.tqdm(database_sets, disable=silent):
+        database_embeddings.append(
+            get_latent_vectors(model, set, device, params))
+
+    data = {}
+
+    for set in tqdm.tqdm(query_sets, disable=silent):
+        query_embeddings.append(get_latent_vectors(model, set, device, params))
 
     # database_embeddings = query_embeddings
     # data['database'] = database_embeddings
@@ -141,6 +150,51 @@ def load_data_item(file_name, params):
 
     return result
 
+
+def get_latent_vectors(model, set, device, params):
+    # Adapted from original PointNetVLAD code
+
+    if DEBUG:
+        embeddings = np.random.rand(len(set), 256)
+        return embeddings
+
+    model.eval()
+    embeddings_l = []
+    for elem_ndx in set:
+        x = load_data_item(set[elem_ndx]["query"], params)
+
+        with torch.no_grad():
+            # coords are (n_clouds, num_points, channels) tensor
+            batch = {}
+            if params.use_cloud:
+                coords = ME.utils.sparse_quantize(coordinates=x['coords'],
+                                                  quantization_size=params.model_params.mink_quantization_size)
+                bcoords = ME.utils.batched_coordinates([coords]).to(device)
+                # Assign a dummy feature equal to 1 to each point
+                feats = torch.ones(
+                    (bcoords.shape[0], 1), dtype=torch.float32).to(device)
+                batch['coords'] = bcoords
+                batch['features'] = feats
+
+            if params.use_rgb:
+                batch['images'] = x['image'].unsqueeze(0).to(device)
+
+            x = model(batch)
+            embedding = x['embedding']
+
+            # embedding is (1, 256) tensor
+            if params.normalize_embeddings:
+                embedding = torch.nn.functional.normalize(
+                    embedding, p=2, dim=1)  # Normalize embeddings
+
+        embedding = embedding.detach().cpu().numpy()
+        embeddings_l.append(embedding)
+
+    embeddings = np.vstack(embeddings_l)
+    return embeddings
+
+
+'''
 
 def get_latent_vectors(model, set, device, params):
     # Adapted from original PointNetVLAD code
@@ -204,6 +258,8 @@ def get_latent_vectors(model, set, device, params):
     embeddings = np.vstack(embeddings_l)
     print("avg={}\n".format(timings.mean()))
     return embeddings
+
+'''
 
 
 def get_recall(m, n, database_vectors, query_vectors, query_sets, database_sets):

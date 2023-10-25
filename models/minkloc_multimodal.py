@@ -75,7 +75,7 @@ class MinkLocMultimodal(torch.nn.Module):
             image_embedding = self.image_fe(batch)
             assert image_embedding.dim() == 2
             assert image_embedding.shape[1] == self.image_fe_size
-            image_embedding = torch.cat([image_embedding, image_embedding], dim=1)
+            # image_embedding = torch.cat([image_embedding, image_embedding], dim=1)
             y['image_embedding'] = image_embedding
 
         if self.cloud_fe is not None:
@@ -241,7 +241,6 @@ class ResnetFPN(torch.nn.Module):
     def forward(self, batch):
         x = batch['images']
         feature_maps = {}
-        print(x.shape)
         # 0, 1, 2, 3 = first layers: Conv2d, BatchNorm, ReLu, MaxPool2d
         x = self.resnet_fe[0](x)
         x = self.resnet_fe[1](x)
@@ -260,23 +259,16 @@ class ResnetFPN(torch.nn.Module):
         # FEATURE HEAD TOP-DOWN PASS
         xf = self.fh_conv1x1[str(self.fh_num_bottom_up)](
             feature_maps[str(self.fh_num_bottom_up)])
-        print(f"xf.shape: {xf.shape}")
         for i in range(self.fh_num_bottom_up, self.fh_num_bottom_up - self.fh_num_top_down, -1):
             # Upsample using transposed convolution
             xf = self.fh_tconvs[str(i)](xf)
-            print(f"xf00{i}.shape: {xf.shape}")
             xf = xf + self.fh_conv1x1[str(i-1)](feature_maps[str(i - 1)])
-            print(
-                f"feature_maps[str(i - 1)]: {feature_maps[str(i - 1)].shape}")
-            print(f"xf01{i}.shape: {xf.shape}")
 
         # print(f"xf_: {xf.shape}")
         x = self.pool(xf)
-        print(f"x_pool: {x.shape}")
         # x is (batch_size, 512, 1, 1) tensor
 
         x = torch.flatten(x, 1)
-        print(f"x_flatten: {x.shape}")
         # x is (batch_size, 512) tensor
 
         if self.add_fc_block:

@@ -144,27 +144,31 @@ class myGNN(nn.Module):
 
         self.MLP = MLP(256, 1)
         # self.BN = nn.BatchNorm1d(2*in_feats)
-        self.conv1 = SAGEConv(256, 128, 'mean')
+        self.conv1 = SAGEConv(2048, 1024, 'mean')
+        self.conv_pos_1 = SAGEConv(256, 256, 'mean')
+        self.conv_pos_2 = SAGEConv(256, 512, 'mean')
+        self.conv_feat_1 = SAGEConv(256, 256, 'mean')
+        self.conv_feat_2 = SAGEConv(256, 512, 'mean')
 
-        self.mlp2 = nn.Sequential(nn.Linear(in_feats, 256),
+        self.mlp2 = nn.Sequential(nn.Linear(in_feats, 128),
                                   nn.ReLU(),
-                                  nn.Linear(256, 128),
+                                  nn.Linear(128, 256),
                                   nn.ReLU(),
-                                  nn.Linear(128, 64),
+                                  nn.Linear(256, 256),
                                   nn.ReLU())
 
-        self.mlp3 = nn.Sequential(nn.Linear(7, 16),
+        self.mlp3 = nn.Sequential(nn.Linear(7, 32),
                                   nn.ReLU(),
-                                  nn.Linear(16, 32),
+                                  nn.Linear(32, 128),
                                   nn.ReLU(),
-                                  nn.Linear(32, 64),
+                                  nn.Linear(128, 256),
                                   nn.ReLU())
 
-        self.Encoder = nn.Sequential(nn.Linear(128, 256),
+        self.Encoder = nn.Sequential(nn.Linear(1024, 2048),
                                      nn.ReLU()
                                      )
 
-        self.Decoder = nn.Sequential(nn.Linear(128, 7)
+        self.Decoder = nn.Sequential(nn.Linear(1024, 7)
                                      # nn.Tanh()
                                      )
 
@@ -175,24 +179,35 @@ class myGNN(nn.Module):
         score = self.MLP(h_u - h_v)
         return {'score': score}
 
-    def forward(self, g, x, x_pose):
+    def forward(self, g_fc, g, x, x_pose):
 
         batch_size = len(x)
-        x = self.mlp2(x)
-        x_pose = self.mlp3(x_pose)
-        x = self.Encoder(torch.cat((x, x_pose), dim=2)).view((-1, 256))
+        x = self.mlp2(x).view((-1, 256))
+
+        with g_fc.local_scope():
+            g_fc.ndata['x'] = x
+            g_fc.apply_edges(self.apply_edges)
+            e = g_fc.edata['score']
+
+        A_feat = self.conv_feat_1(g_fc, x, e)
+        A_feat = self.conv_feat_2(g_fc, A_feat, e).view((batch_size, 51, -1))
+
+        x_pose = self.mlp3(x_pose).view((-1, 256))
+
+        A_pose = self.conv_pos_1(g_fc, x_pose, e)
+        A_pose = self.conv_pos_2(g_fc, A_pose, e).view((batch_size, 51, -1))
+
+        x = self.Encoder(torch.cat((A_feat, A_pose), dim=2)).view((-1, 2048))
 
         # x = self.BN(x)
 
-        with g.local_scope():
-            g.ndata['x'] = x
-            g.apply_edges(self.apply_edges)
-            e = g.edata['score']
-
-        A = self.conv1(g, x, e).view((batch_size, 51, -1))
+        e_g = e.view((batch_size, -1, 1))[:, 1:51].reshape((-1, 1))
+        A = self.conv1(
+            g, x, e_g).view((batch_size, 51, -1))
+        # .view((batch_size, 51, -1))
         # A = self.conv1(g, x)
 
-        est_pose = self.Decoder(A)
+        est_pose = self.Decoder(A[:, :1])
 
         # est_pose = A[0, 512:]
 
@@ -464,14 +479,14 @@ def make_dataloader(params, project_params):
 
     dataloaders = {}
     train_sampler = BatchSampler(
-        datasets['train'], batch_size=32, type='train')
+        datasets['train'], batch_size=8, type='train')
     # Collate function collates items into a batch and applies a 'set transform' on the entire batch
     train_collate_fn = make_smoothap_collate_fn(datasets['train'],  0.01)
     dataloaders['train'] = DataLoader(datasets['train'], batch_sampler=train_sampler, collate_fn=train_collate_fn,
                                       num_workers=params.num_workers, pin_memory=False)
 
     if 'val' in datasets:
-        val_sampler = BatchSampler(datasets['val'], batch_size=64, type='val')
+        val_sampler = BatchSampler(datasets['val'], batch_size=8, type='val')
         # Collate function collates items into a batch and applies a 'set transform' on the entire batch
         # Currently validation dataset has empty set_transform function, but it may change in the future
         val_collate_fn = make_smoothap_collate_fn(datasets['val'], 0.01, 'val')
@@ -549,8 +564,8 @@ def get_embeddings_3d(model, params, project_params, device, scene):
 
             # embedding is (1, 256) tensor
             # if params.normalize_embeddings:
-            #     embedding = torch.nn.functional.normalize(
-            #         embedding, p=2, dim=1)  # Normalize embeddings
+            embedding = torch.nn.functional.normalize(
+                embedding, p=2, dim=1)  # Normalize embeddings
 
         embedding = embedding.detach().cpu().numpy()
         embeddings_l.append(embedding)

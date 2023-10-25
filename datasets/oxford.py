@@ -112,7 +112,7 @@ def image4lidar(filename, image_path, image_ext, lidar2image_ndx, k=None):
     imagePath = filename.split('/')[-1]
     imagePath = imagePath.replace('bin', 'color.png')
     # color3
-    imagePath = os.path.join('/home/ubuntu-user/S3E-backup/datasetfiles/datasets/fire/color', imagePath)
+    imagePath = os.path.join('/home/david/datasets/fire/color', imagePath)
 
     '''
     lidar_ts, traversal = ts_from_filename(filename)

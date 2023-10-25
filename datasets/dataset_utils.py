@@ -41,6 +41,55 @@ def make_datasets(params: MinkLocParams, debug=False):
 
 def make_collate_fn(dataset: ScanNetDataset, mink_quantization_size=None):
     # set_transform: the transform to be applied to all batch elements
+    def collate_fn(data_list):
+        # Constructs a batch object
+        labels = [e['ndx'] for e in data_list]
+
+        # Compute positives and negatives mask
+        positives_mask = [[in_sorted_array(
+            e, dataset.queries[label].positives) for e in labels] for label in labels]
+        negatives_mask = [[not in_sorted_array(
+            e, dataset.queries[label].non_negatives) for e in labels] for label in labels]
+        positives_mask = torch.tensor(positives_mask)
+        negatives_mask = torch.tensor(negatives_mask)
+
+        # Returns (batch_size, n_points, 3) tensor and positives_mask and
+        # negatives_mask which are batch_size x batch_size boolean tensors
+        result = {'positives_mask': positives_mask,
+                  'negatives_mask': negatives_mask}
+
+        if 'cloud' in data_list[0]:
+            clouds = [e['cloud'] for e in data_list]
+
+            # Produces (batch_size, n_points, 3) tensor
+            clouds = torch.stack(clouds, dim=0)
+            if dataset.set_transform is not None:
+                # Apply the same transformation on all dataset elements
+                clouds = dataset.set_transform(clouds)
+
+            coords = [ME.utils.sparse_quantize(coordinates=e, quantization_size=mink_quantization_size)
+                      for e in clouds]
+            coords = ME.utils.batched_coordinates(coords)
+            # Assign a dummy feature equal to 1 to each point
+            # Coords must be on CPU, features can be on GPU - see MinkowskiEngine documentation
+            feats = torch.ones((coords.shape[0], 1), dtype=torch.float32)
+            result['coords'] = coords
+            result['features'] = feats
+
+        if 'image' in data_list[0]:
+            images = [e['image'] for e in data_list]
+            # Produces (N, C, H, W) tensor
+            result['images'] = torch.stack(images, dim=0)
+
+        return result
+
+    return collate_fn
+
+
+'''
+
+def make_collate_fn(dataset: ScanNetDataset, mink_quantization_size=None):
+    # set_transform: the transform to be applied to all batch elements
 
     def collate_fn(data_list):
         # print(f"collate_fn begin")
@@ -110,6 +159,8 @@ def make_collate_fn(dataset: ScanNetDataset, mink_quantization_size=None):
         return result
         # print(f"make_collate_fn ends")
     return collate_fn
+
+'''
 
 
 def make_dataloaders(params: MinkLocParams, debug=False):

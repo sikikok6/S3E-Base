@@ -133,7 +133,7 @@ gt = torch.tensor(gt)
 for i in train_iou:
     gt[i][i] = 1.
     for p in train_iou[i].positives:
-        gt[i][p] = iou[i][p]
+        gt[i][p] = 1.
 
 
 if params.model_params.model == "MinkLocMultimodal":
@@ -210,9 +210,22 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
             g = dgl.graph((src, dst))
             g = g.to('cuda')
 
+            node = torch.tensor(list(range(node_nums+1)))
+
+            src = torch.repeat_interleave(node.unsqueeze(
+                0), node_nums+1, 0).view((1, -1)).squeeze()
+
+            dst = torch.repeat_interleave(node, node_nums+1)
+
+            g_fc = dgl.graph((src, dst))
+            g_fc = g_fc.to('cuda')
+
             for pos_mask, neg_mask, hard_pos_mask, labels, neighbours, most_pos_mask, batch in tbar2:
                 g_arr = [g] * len(pos_mask)
                 g_batch = dgl.batch(g_arr)
+
+                g_fc_arr = [g_fc] * len(pos_mask)
+                g_fc_batch = dgl.batch(g_fc_arr)
                 torch.cuda.empty_cache()
                 model.train()
 
@@ -232,7 +245,7 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                     gt_iou_ = iou[indx, indy].view((-1, 1)).cuda()
 
                     A, e, pos_pred, ori_pred = model(
-                        g_batch, embeddings, pose_embeddings)
+                        g_fc_batch, g_batch, embeddings, pose_embeddings)
 
                     query_embeddings = torch.repeat_interleave(
                         A[:, 0], node_nums, 0).view((len(pos_mask), node_nums, -1))
@@ -242,7 +255,7 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                     sim_mat = cos(query_embeddings, database_embeddings)
 
                     loss_affinity_1 = criterion(
-                        e[:, :node_nums].view(-1, node_nums, 1), gt_iou.view(-1, node_nums, 1).cuda())
+                        e, gt_iou.cuda())
 
                     # print(pos_mask.shape)
                     # hard_sim_mat = sim_mat[pos_mask[:, 1:]]
@@ -353,6 +366,14 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
 
                 g = dgl.graph((src, dst))
                 g = g.to('cuda')
+
+                src = torch.repeat_interleave(node.unsqueeze(
+                    0), node_nums+1, 0).view((1, -1)).squeeze()
+
+                dst = torch.repeat_interleave(node, node_nums+1)
+
+                g_fc = dgl.graph((src, dst))
+                g_fc = g_fc.to('cuda')
                 with tqdm.tqdm(dataloaders['val'], position=1, desc='batch', ncols=60) as tbar3:
                     for pos_mask, neg_mask, hard_pos_mask, labels, neighbours, most_pos_mask, batch in tbar3:
                         if len(labels) == 0:
@@ -360,6 +381,9 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
 
                         g_arr = [g] * len(pos_mask)
                         g_batch = dgl.batch(g_arr)
+
+                        g_fc_arr = [g_fc] * len(pos_mask)
+                        g_fc_batch = dgl.batch(g_fc_arr)
 
                         ind = labels.clone().detach()
                         # ind = labels
@@ -371,8 +395,8 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                         ind_pose[:, 0] = ind_pose[:, 1]
                         test_pose_embeddings = pose_embs[ind_pose[:, :node_nums+1]]
 
-                        A, e, test_pos_pred, test_ori_pred = model(
-                            g_batch, embeddings, test_pose_embeddings)
+                        A, e, test_pos_pred, test_ori_pred = model(g_fc_batch,
+                                                                   g_batch, embeddings, test_pose_embeddings)
 
                         '''Pose Loss Cal'''
                         test_gt_pose = test_pose_embs[ind[:, 0]]
