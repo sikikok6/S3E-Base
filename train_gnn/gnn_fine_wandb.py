@@ -147,7 +147,7 @@ model = myGNN(in_feats, 256, 128)
 model.to('cuda')
 
 opt = torch.optim.Adam(
-    [{'params': model.parameters(), 'lr': 0.0005, 'weight_decay': 0.001}])
+    [{'params': model.parameters(), 'lr': 0.0001, 'weight_decay': 0.001}])
 loss = None
 recall = None
 smoothap = SmoothAP()
@@ -236,6 +236,13 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                     ind_pose = labels.clone().detach()
                     ind_pose[:, 0] = ind_pose[:, 1]
                     pose_embeddings = pose_embs[ind_pose[:, :node_nums+1]]
+
+                    trans_noise = torch.randn(
+                        (pose_embeddings.shape[0], pose_embeddings.shape[1], 3)).cuda().detach()
+                    rot_noise = torch.randn(
+                        (pose_embeddings.shape[0], pose_embeddings.shape[1], 4)).cuda().detach()
+                    pose_noise = torch.cat((trans_noise, rot_noise), dim=2)
+                    pose_embeddings += pose_noise / 10
 
                     indx = ind[..., dst]
                     indy = ind[..., src]
@@ -394,6 +401,12 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                         ind_pose = labels.clone().detach()
                         ind_pose[:, 0] = ind_pose[:, 1]
                         test_pose_embeddings = pose_embs[ind_pose[:, :node_nums+1]]
+                        trans_noise = torch.randn(
+                            (test_pose_embeddings.shape[0], test_pose_embeddings.shape[1], 3)).cuda().detach()
+                        rot_noise = torch.randn(
+                            (test_pose_embeddings.shape[0], test_pose_embeddings.shape[1], 4)).cuda().detach()
+                        pose_noise = torch.cat((trans_noise, rot_noise), dim=2)
+                        test_pose_embeddings += pose_noise / 10
 
                         A, e, test_pos_pred, test_ori_pred = model(g_fc_batch,
                                                                    g_batch, embeddings, test_pose_embeddings)

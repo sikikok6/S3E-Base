@@ -150,27 +150,39 @@ class myGNN(nn.Module):
         self.conv_feat_1 = SAGEConv(256, 256, 'mean')
         self.conv_feat_2 = SAGEConv(256, 512, 'mean')
 
-        self.mlp2 = nn.Sequential(nn.Linear(in_feats, 128),
-                                  nn.ReLU(),
-                                  nn.Linear(128, 256),
-                                  nn.ReLU(),
-                                  nn.Linear(256, 256),
-                                  nn.ReLU())
+        self.mlp2 = nn.Sequential(
+            nn.BatchNorm1d(in_feats),
+            nn.Linear(in_feats, 128),
+            nn.ReLU(),
+            nn.BatchNorm1d(128),
+            nn.Linear(128, 256),
+            nn.ReLU(),
+            nn.BatchNorm1d(256),
+            nn.Linear(256, 256),
+            nn.ReLU())
 
-        self.mlp3 = nn.Sequential(nn.Linear(7, 32),
-                                  nn.ReLU(),
-                                  nn.Linear(32, 128),
-                                  nn.ReLU(),
-                                  nn.Linear(128, 256),
-                                  nn.ReLU())
+        self.mlp3 = nn.Sequential(
+            nn.BatchNorm1d(7),
+            nn.Linear(7, 32),
+            nn.ReLU(),
+            nn.BatchNorm1d(32),
+            nn.Linear(32, 128),
+            nn.ReLU(),
+            nn.BatchNorm1d(128),
+            nn.Linear(128, 256),
+            nn.ReLU())
 
-        self.Encoder = nn.Sequential(nn.Linear(1024, 2048),
-                                     nn.ReLU()
-                                     )
+        self.Encoder = nn.Sequential(
+            nn.BatchNorm1d(1024),
+            nn.Linear(1024, 2048),
+            nn.ReLU()
+        )
 
-        self.Decoder = nn.Sequential(nn.Linear(1024, 7)
-                                     # nn.Tanh()
-                                     )
+        self.Decoder = nn.Sequential(
+            nn.BatchNorm1d(1024),
+            nn.Linear(1024, 7)
+            # nn.Tanh()
+        )
 
     def apply_edges(self, edges):
         h_u = edges.src['x']
@@ -182,8 +194,8 @@ class myGNN(nn.Module):
     def forward(self, g_fc, g, x, x_pose):
 
         batch_size = len(x)
-        x = self.mlp2(x).view((-1, 256))
-
+        x = self.mlp2(x.view((-1, 256))
+                      )
         with g_fc.local_scope():
             g_fc.ndata['x'] = x
             g_fc.apply_edges(self.apply_edges)
@@ -192,13 +204,13 @@ class myGNN(nn.Module):
         A_feat = self.conv_feat_1(g_fc, x, e)
         A_feat = self.conv_feat_2(g_fc, A_feat, e).view((batch_size, 51, -1))
 
-        x_pose = self.mlp3(x_pose).view((-1, 256))
-
+        x_pose = self.mlp3(x_pose.view((-1, 7))
+                           )
         A_pose = self.conv_pos_1(g_fc, x_pose, e)
         A_pose = self.conv_pos_2(g_fc, A_pose, e).view((batch_size, 51, -1))
 
-        x = self.Encoder(torch.cat((A_feat, A_pose), dim=2)).view((-1, 2048))
-
+        x = self.Encoder(torch.cat((A_feat, A_pose), dim=2).view((-1, 1024))
+                         )
         # x = self.BN(x)
 
         e_g = e.view((batch_size, -1, 1))[:, 1:51].reshape((-1, 1))
@@ -207,7 +219,8 @@ class myGNN(nn.Module):
         # .view((batch_size, 51, -1))
         # A = self.conv1(g, x)
 
-        est_pose = self.Decoder(A[:, :1])
+        # A = F.leaky_relu(A)
+        est_pose = self.Decoder(A[:, 0]).unsqueeze(1)
 
         # est_pose = A[0, 512:]
 
@@ -215,8 +228,6 @@ class myGNN(nn.Module):
         ori_out = est_pose[:, 0, 3:]
 
         # A = A[:, :512]
-
-        A = F.leaky_relu(A)
 
         A = F.normalize(A, dim=1)
         # pred2, A2 = self.conv2(g, pred)
@@ -479,14 +490,14 @@ def make_dataloader(params, project_params):
 
     dataloaders = {}
     train_sampler = BatchSampler(
-        datasets['train'], batch_size=8, type='train')
+        datasets['train'], batch_size=32, type='train')
     # Collate function collates items into a batch and applies a 'set transform' on the entire batch
     train_collate_fn = make_smoothap_collate_fn(datasets['train'],  0.01)
     dataloaders['train'] = DataLoader(datasets['train'], batch_sampler=train_sampler, collate_fn=train_collate_fn,
                                       num_workers=params.num_workers, pin_memory=False)
 
     if 'val' in datasets:
-        val_sampler = BatchSampler(datasets['val'], batch_size=8, type='val')
+        val_sampler = BatchSampler(datasets['val'], batch_size=32, type='val')
         # Collate function collates items into a batch and applies a 'set transform' on the entire batch
         # Currently validation dataset has empty set_transform function, but it may change in the future
         val_collate_fn = make_smoothap_collate_fn(datasets['val'], 0.01, 'val')
