@@ -213,25 +213,26 @@ class myGNN(nn.Module):
                          )
         # x = self.BN(x)
 
-        e_g = e.view((batch_size, -1, 1))[:, 1:51].reshape((-1, 1))
+        # e_g = e.view((batch_size, -1, 1))[:, 1:51].reshape((-1, 1))
         A = self.conv1(
-            g, x, e_g).view((batch_size, 51, -1))
+            g_fc, x, e)
         # .view((batch_size, 51, -1))
         # A = self.conv1(g, x)
 
         # A = F.leaky_relu(A)
-        est_pose = self.Decoder(A[:, 0]).unsqueeze(1)
+        # est_pose = self.Decoder(A[:, 0]).unsqueeze(1)
+        est_pose = self.Decoder(A).view((batch_size, 51, -1))
 
         # est_pose = A[0, 512:]
 
-        pos_out = est_pose[:, 0, :3]
-        ori_out = est_pose[:, 0, 3:]
+        pos_out = est_pose[:, :, :3]
+        ori_out = est_pose[:, :, 3:]
 
         # A = A[:, :512]
 
-        A = F.normalize(A, dim=1)
+        A = F.normalize(A, dim=1).view((batch_size, 51, -1))
         # pred2, A2 = self.conv2(g, pred)
-        return A, e, pos_out, ori_out
+        return A, e, pos_out.view((-1, 3)), ori_out.view((-1, 4))
 
 
 def split_batch(lst, batch_size):
