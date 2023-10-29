@@ -184,7 +184,7 @@ class myGNN(nn.Module):
             # nn.Tanh()
         )
 
-    def apply_edges(self, edges):
+    def edge_score(self, edges):
         h_u = edges.src['x']
         h_v = edges.dst['x']
         # score = self.MLP(torch.cat((h_u, h_v), 1))
@@ -198,7 +198,7 @@ class myGNN(nn.Module):
                       )
         with g_fc.local_scope():
             g_fc.ndata['x'] = x
-            g_fc.apply_edges(self.apply_edges)
+            g_fc.apply_edges(self.edge_score)
             e = g_fc.edata['score']
 
         A_feat = self.conv_feat_1(g_fc, x, e)
