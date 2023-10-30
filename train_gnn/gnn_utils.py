@@ -23,6 +23,7 @@ from scipy.spatial import distance
 from torch import autograd
 import transforms3d.quaternions as txq
 from scipy.spatial.transform import Rotation as R
+import pytorch3d.transforms as p3dtrans
 
 train_sim_mat = []
 query_sim_mat = []
@@ -184,12 +185,31 @@ class myGNN(nn.Module):
             # nn.Tanh()
         )
 
+        self.EdgePose = nn.Sequential(
+            nn.Linear(2048, 7)
+            # nn.Tanh()
+        )
+
     def edge_score(self, edges):
         h_u = edges.src['x']
         h_v = edges.dst['x']
         # score = self.MLP(torch.cat((h_u, h_v), 1))
         score = self.MLP(h_u - h_v)
         return {'score': score}
+
+    def edge_pose(self, edges):
+        h_u = edges.src['x']
+        h_v = edges.dst['x']
+        pose = self.EdgePose(torch.cat((h_u, h_v), dim=1))
+        return {'pose': pose}
+
+    def pose_multipy(self, ori_pose, delta_pose):
+        ori_pos = ori_pose[:, :3].unsqueeze(1)
+        ori_rot = ori_pose[:, 3:].unsqueeze(1)
+        delta_pos = delta_pose[:, :, :3] + ori_pos
+        delta_rot = p3dtrans.quaternion_multiply(F.normalize(
+            ori_rot, p=2, dim=2), F.normalize(delta_pose[:, :, 3:], p=2, dim=2))
+        return torch.cat((delta_pos, delta_rot), dim=2)
 
     def forward(self, g_fc, g, x, x_pose):
 
@@ -222,6 +242,12 @@ class myGNN(nn.Module):
         # A = F.leaky_relu(A)
         # est_pose = self.Decoder(A[:, 0]).unsqueeze(1)
         est_pose = self.Decoder(A).view((batch_size, 51, -1))
+        with g.local_scope():
+            g.ndata['x'] = A
+            g.apply_edges(self.edge_pose)
+            deltaPose = g.edata['pose']
+        q2r = self.pose_multipy(
+            est_pose[:, 0], deltaPose.view((batch_size, 50, -1)))
 
         # est_pose = A[0, 512:]
 
@@ -232,7 +258,7 @@ class myGNN(nn.Module):
 
         A = F.normalize(A, dim=1).view((batch_size, 51, -1))
         # pred2, A2 = self.conv2(g, pred)
-        return A, e, pos_out.view((-1, 3)), ori_out.view((-1, 4))
+        return A, e, pos_out.view((-1, 3)), ori_out.view((-1, 4)), q2r
 
 
 def split_batch(lst, batch_size):

@@ -251,7 +251,7 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                     gt_iou = gt[indx, indy].view((-1, 1))
                     gt_iou_ = iou[indx, indy].view((-1, 1)).cuda()
 
-                    A, e, pos_pred, ori_pred = model(
+                    A, e, pos_pred, ori_pred, q2r = model(
                         g_fc_batch, g_batch, embeddings, pose_embeddings)
 
                     query_embeddings = torch.repeat_interleave(
@@ -279,11 +279,23 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                     pos_true = gt_pose[:, :3]
                     ori_true = gt_pose[:, 3:]
 
+                    pos_q2r = q2r.view((-1, 7))[:, :3]
+                    ori_q2r = F.normalize(q2r.view((-1, 7))[:, 3:], p=2, dim=1)
+
+                    pos_q2r_true = pose_embs[ind[:, :]
+                                             ][:, 1:, :].contiguous().view((-1, 7))[:, :3]
+                    ori_q2r_true = pose_embs[ind[:, :]
+                                             ][:, 1:, :].contiguous().view((-1, 7))[:, 3:]
+
                     ori_pred = F.normalize(ori_pred, p=2, dim=1)
                     ori_true = F.normalize(ori_true, p=2, dim=1)
+                    ori_q2r_true = F.normalize(ori_q2r_true, p=2, dim=1)
 
                     loss_pose, loss_pos, loss_ori = pose_loss(
                         pos_pred, ori_pred, pos_true, ori_true)
+
+                    loss_pose_q2r, loss_pos_q2r, loss_ori_q2r = pose_loss(
+                        pos_q2r, ori_q2r, pos_q2r_true, ori_q2r_true)
 
                     # alpha for mse1
                     alpha = 2
@@ -300,14 +312,19 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                     # Here have beta
                     train_loss_ori = beta * loss_ori
                     # train_loss_pos_ori = train_loss_pos + train_loss_ori
-                    train_loss_pos_ori = loss_pose
+                    train_loss_pos_ori = loss_pose + loss_pose_q2r
 
                     batch_loss = alpha * train_loss_mse1 + gamma * loss_pose
                     pred_pose = np.hstack(
                         (pos_pred.detach().cpu().numpy(), ori_pred.detach().cpu().numpy()))
+                    pred_q2r_pose = np.hstack(
+                        (pos_q2r.detach().cpu().numpy(), ori_q2r.detach().cpu().numpy()))
+                    true_q2r_pose = np.hstack(
+                        (pos_q2r_true.detach().cpu().numpy(), ori_q2r_true.detach().cpu().numpy()))
 
                     trans_error, rot_error = cal_trans_rot_error(
-                        pred_pose, gt_pose.detach().cpu().numpy())
+                        # pred_pose, gt_pose.detach().cpu().numpy())
+                        pred_q2r_pose, true_q2r_pose)
 
                     trans_loss += trans_error
                     rotation_loss += rot_error
@@ -409,8 +426,8 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                         pose_noise = torch.cat((trans_noise, rot_noise), dim=2)
                         test_pose_embeddings += pose_noise / 10
 
-                        A, e, test_pos_pred, test_ori_pred = model(g_fc_batch,
-                                                                   g_batch, embeddings, test_pose_embeddings)
+                        A, e, test_pos_pred, test_ori_pred, q2r = model(g_fc_batch,
+                                                                        g_batch, embeddings, test_pose_embeddings)
 
                         '''Pose Loss Cal'''
                         # test_gt_pose = pose_embs[ind[:, :]]
