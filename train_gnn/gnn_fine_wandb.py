@@ -1,7 +1,7 @@
 import datetime
 import wandb
 import torch.nn.functional as F
-from loss import SmoothAP, C2F
+from loss import SmoothAP
 import dgl
 import pickle
 import torch.nn as nn
@@ -50,8 +50,8 @@ print("model config: ", model_config)
 print("rgb weights: ", rgb_weights)
 print("pcl weights: ", pcl_weights)
 
-# run = wandb.init(project="SE3-Backup-V2-Model",
-#                  name="Exp_"+time_string + "fineloss")
+run = wandb.init(project="SE3-Backup-V2-Model",
+                 name="Exp_"+time_string + "fineloss")
 
 # config = '/home/ubuntu-user/S3E-backup/config/config_baseline_multimodal.txt'
 # model_config = '//home/ubuntu-user/S3E-backup/models/minkloc3d.txt'
@@ -182,7 +182,7 @@ pdist = nn.PairwiseDistance(p=2)
 cos = nn.CosineSimilarity(dim=2).cuda()
 
 max_ = 0.
-node_nums = 50
+node_nums = 20
 # labels = range(len(feat))
 with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
     for epoch in tbar:
@@ -307,14 +307,15 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                     # train_loss_ap = 1 - (0.7*ap_coarse + 0.3*ap_fine)
 
                     train_loss_ap = (1 - ap_coarse).mean()
-                    train_loss_mse1 = loss_affinity_1
+                    train_loss_mse1 = loss_affinity_1 + train_loss_ap
                     train_loss_pos = loss_pos
                     # Here have beta
                     train_loss_ori = beta * loss_ori
                     # train_loss_pos_ori = train_loss_pos + train_loss_ori
                     train_loss_pos_ori = loss_pose + loss_pose_q2r
 
-                    batch_loss = alpha * train_loss_mse1 + gamma * loss_pose
+                    batch_loss = alpha * train_loss_mse1 + \
+                        gamma * (loss_pose)
                     pred_pose = np.hstack(
                         (pos_pred.detach().cpu().numpy(), ori_pred.detach().cpu().numpy()))
                     pred_q2r_pose = np.hstack(
@@ -323,8 +324,8 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                         (pos_q2r_true.detach().cpu().numpy(), ori_q2r_true.detach().cpu().numpy()))
 
                     trans_error, rot_error = cal_trans_rot_error(
-                        # pred_pose, gt_pose.detach().cpu().numpy())
-                        pred_q2r_pose, true_q2r_pose)
+                        pred_pose, gt_pose.detach().cpu().numpy())
+                    # pred_q2r_pose, true_q2r_pose)
 
                     trans_loss += trans_error
                     rotation_loss += rot_error
@@ -362,21 +363,21 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
 
             # # print(f"Epoch {epoch}:Ap_Loss:{sum_dict['ap']/float(count)}")
             # wandb.log({'Ap_Loss': sum_dict['ap']/float(count)}, step=epoch)
-            #
-            # # print(f"Epoch {epoch}:Mse1_Loss:{sum_dict['mse1']/float(count)}")
+
+            # print(f"Epoch {epoch}:Mse1_Loss:{sum_dict['mse1']/float(count)}")
             # wandb.log({'Mse1_Loss': sum_dict['mse1']/float(count)}, step=epoch)
-            # #
-            # wandb.log({'Pos_Loss': sum_dict['pos']/float(count)}, step=epoch)
-            # #
-            # wandb.log({'Ori_Loss': sum_dict['ori']/float(count)}, step=epoch)
-            # wandb.log(
-            #     {'train_tran_error': sum_dict['train_tran_error']/float(count)}, step=epoch)
-            # wandb.log(
-            #     {'train_ori_error': sum_dict['train_ori_error']/float(count)}, step=epoch)
             #
-            # wandb.log(
-            #     {'Pos_And_Ori_Loss': sum_dict['pos_ori']/float(count)}, step=epoch)
+            wandb.log({'Pos_Loss': sum_dict['pos']/float(count)}, step=epoch)
             #
+            wandb.log({'Ori_Loss': sum_dict['ori']/float(count)}, step=epoch)
+            wandb.log(
+                {'train_tran_error': sum_dict['train_tran_error']/float(count)}, step=epoch)
+            wandb.log(
+                {'train_ori_error': sum_dict['train_ori_error']/float(count)}, step=epoch)
+
+            wandb.log(
+                {'Pos_And_Ori_Loss': sum_dict['pos_ori']/float(count)}, step=epoch)
+
             # wandb.log({'Train_Average_Loss': loss/float(count)}, step=epoch)
 
             with torch.no_grad():
@@ -414,11 +415,11 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
                         # ind = labels
 
                         embeddings = torch.cat(
-                            (database_embs[ind[:, 0]].unsqueeze(1), embs[ind[:, 1:node_nums+1]]), dim=1)
+                            (database_embs[ind[:, 0]].unsqueeze(1), database_embs[ind[:, 1:node_nums+1]]), dim=1)
                         # ind_pose = ind.copy()
                         ind_pose = labels.clone().detach()
                         ind_pose[:, 0] = ind_pose[:, 1]
-                        test_pose_embeddings = pose_embs[ind_pose[:, :node_nums+1]]
+                        test_pose_embeddings = test_pose_embs[ind_pose[:, :node_nums+1]]
                         trans_noise = torch.randn(
                             (test_pose_embeddings.shape[0], test_pose_embeddings.shape[1], 3)).cuda().detach()
                         rot_noise = torch.randn(
@@ -463,19 +464,19 @@ with tqdm.tqdm(range(200), position=0, desc='epoch', ncols=60) as tbar:
 
                     evanums = tbar3.n
                     # t_loss = t_loss.detach().cpu().numpy()
-                    print(f"Val_poss_loss:{t_loss/evanums}")
+                    # print(f"Val_poss_loss:{t_loss/evanums}")
                     print(
                         f"\033[1;33mVal_trans_loss:{trans_loss/evanums}\033[0m")
                     print(
                         f"\033[1;33mVal_rotation_loss:{rotation_loss/evanums}\033[0m")
                     # wandb.log(
                     #     {'Val_Avg_Poss_Loss': t_loss/evanums}, step=epoch)
+
+                    wandb.log(
+                        {'Val_trans_loss': trans_loss/evanums}, step=epoch)
                     #
-                    # wandb.log(
-                    #     {'Val_trans_loss': trans_loss/evanums}, step=epoch)
-                    # #
-                    # wandb.log(
-                    #     {'Val_rotation_loss': rotation_loss/evanums}, step=epoch)
+                    wandb.log(
+                        {'Val_rotation_loss': rotation_loss/evanums}, step=epoch)
 
         tbar.set_postfix({'train loss': loss/float(count)})
 

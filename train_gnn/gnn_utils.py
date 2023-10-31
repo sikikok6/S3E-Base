@@ -187,7 +187,6 @@ class myGNN(nn.Module):
 
         self.EdgePose = nn.Sequential(
             nn.Linear(2048, 7)
-            # nn.Tanh()
         )
 
     def edge_score(self, edges):
@@ -204,12 +203,18 @@ class myGNN(nn.Module):
         return {'pose': pose}
 
     def pose_multipy(self, ori_pose, delta_pose):
+        index_delta = torch.tensor([[[3, 0, 1, 2] for _ in range(delta_pose.shape[1])]
+                                   for _ in range(delta_pose.shape[0])]).cuda()
+        index_ori = torch.tensor([[[3, 0, 1, 2]]]).cuda()
+        re_index = torch.tensor([[[1, 2, 3, 0] for _ in range(delta_pose.shape[1])]
+                                for _ in range(delta_pose.shape[0])]).cuda()
         ori_pos = ori_pose[:, :3].unsqueeze(1)
         ori_rot = ori_pose[:, 3:].unsqueeze(1)
         delta_pos = delta_pose[:, :, :3] + ori_pos
-        delta_rot = p3dtrans.quaternion_multiply(F.normalize(
-            ori_rot, p=2, dim=2), F.normalize(delta_pose[:, :, 3:], p=2, dim=2))
-        return torch.cat((delta_pos, delta_rot), dim=2)
+        delta_rot = p3dtrans.quaternion_multiply(
+            F.normalize(ori_rot, p=2, dim=2).gather(2, index_ori),
+            F.normalize(delta_pose[:, :, 3:], p=2, dim=2).gather(2, index_delta))
+        return torch.cat((delta_pos, delta_rot.gather(2, re_index)), dim=2)
 
     def forward(self, g_fc, g, x, x_pose):
 
@@ -222,32 +227,33 @@ class myGNN(nn.Module):
             e = g_fc.edata['score']
 
         A_feat = self.conv_feat_1(g_fc, x, e)
-        A_feat = self.conv_feat_2(g_fc, A_feat, e).view((batch_size, 51, -1))
+        A_feat = self.conv_feat_2(g_fc, A_feat, e).view((batch_size, 21, -1))
 
         x_pose = self.mlp3(x_pose.view((-1, 7))
                            )
         A_pose = self.conv_pos_1(g_fc, x_pose, e)
-        A_pose = self.conv_pos_2(g_fc, A_pose, e).view((batch_size, 51, -1))
+        A_pose = self.conv_pos_2(g_fc, A_pose, e).view((batch_size, 21, -1))
 
         x = self.Encoder(torch.cat((A_feat, A_pose), dim=2).view((-1, 1024))
                          )
         # x = self.BN(x)
 
-        # e_g = e.view((batch_size, -1, 1))[:, 1:51].reshape((-1, 1))
+        # e_g = e.view((batch_size, -1, 1))[:, 1:11].reshape((-1, 1))
         A = self.conv1(
             g_fc, x, e)
-        # .view((batch_size, 51, -1))
+        # .view((batch_size, 11, -1))
         # A = self.conv1(g, x)
 
         # A = F.leaky_relu(A)
         # est_pose = self.Decoder(A[:, 0]).unsqueeze(1)
-        est_pose = self.Decoder(A).view((batch_size, 51, -1))
+        est_pose = self.Decoder(A).view((batch_size, 21, -1))
         with g.local_scope():
             g.ndata['x'] = A
             g.apply_edges(self.edge_pose)
             deltaPose = g.edata['pose']
+
         q2r = self.pose_multipy(
-            est_pose[:, 0], deltaPose.view((batch_size, 50, -1)))
+            est_pose[:, 0], deltaPose.view((batch_size, 20, -1)))
 
         # est_pose = A[0, 512:]
 
@@ -256,7 +262,7 @@ class myGNN(nn.Module):
 
         # A = A[:, :512]
 
-        A = F.normalize(A, dim=1).view((batch_size, 51, -1))
+        A = F.normalize(A, dim=1).view((batch_size, 21, -1))
         # pred2, A2 = self.conv2(g, pred)
         return A, e, pos_out.view((-1, 3)), ori_out.view((-1, 4)), q2r
 
@@ -363,7 +369,7 @@ def make_smoothap_collate_fn(dataset: ScanNetDataset, mink_quantization_size=Non
         global train_sim_mat
         global database_sim_mat
         global query_sim_mat
-        num = 50
+        num = 20
         positives_mask = []
         hard_positives_mask = []
         negatives_mask = []
@@ -434,13 +440,17 @@ def make_smoothap_collate_fn(dataset: ScanNetDataset, mink_quantization_size=Non
                 neighbours.append(train_sim_mat[labels[i][0]][:num])
 
             # neighbours.append(temp)
+
         valid_mask = torch.sum(torch.tensor(positives_masks), -1) != 1
+        if val == 'val':
+            valid_mask = torch.ones(valid_mask.shape, dtype=torch.bool)
         positives_masks = torch.tensor(positives_masks)[valid_mask]
         negatives_masks = torch.tensor(negatives_masks)[valid_mask]
         hard_positives_masks = torch.tensor(hard_positives_masks)[valid_mask]
         labels = torch.tensor(labels)[valid_mask]
         neighbours = torch.tensor(neighbours)[valid_mask]
         most_positives_masks = torch.tensor(most_positives_masks)[valid_mask]
+
         return positives_masks, negatives_masks, hard_positives_masks, labels, neighbours, most_positives_masks, None
 
         # return torch.tensor(positives_masks)[valid_mask], torch.tensor(negatives_masks)[valid_mask], torch.tensor(hard_positives_masks)[valid_mask], torch.tensor(labels)[valid_mask], torch.tensor(neighbours)[valid_mask], torch.tensor(most_positives_masks)[valid_mask], None
@@ -471,41 +481,22 @@ def make_dataloader(params, project_params):
 
     train_sim = distance.cdist(train_embeddings, train_embeddings)
     database_sim = distance.cdist(database_embeddings, database_embeddings)
-    database_sim = train_sim.copy()
-    query_sim = distance.cdist(database_embeddings, train_embeddings)
-    # query_sim = database_sim
+    # database_sim = train_sim.copy()
+    # query_sim = distance.cdist(database_embeddings, train_embeddings)
+    query_sim = database_sim.copy()
     print(query_sim.shape)
-
-    # train_sim = np.matmul(train_embeddings, train_embeddings.T)
-    # database_sim = np.matmul(test_embeddings, test_embeddings.T)
-    # train_sim_mat = np.argsort(train_sim)
-    # database_sim_mat = np.argsort(database_sim)
 
     train_sim_mat = np.argsort(train_sim).tolist()
     database_sim_mat = np.argsort(database_sim).tolist()
     query_sim_mat = np.argsort(query_sim).tolist()
     # train_sim_mat = []
 
-    # for i in range(len(train_sim_mat_)):
-    #     tmp = train_sim_mat_[i]
-    #     mask = tmp // 1000 != i // 1000
-    #     tmp = tmp[mask]
-    #     train_sim_mat.append(tmp)
+    # t_ = []
+    # for i in range(len(train_sim_mat)):
+    #     t = np.array(train_sim_mat[i])
+    #     t_.append(list(t[(t != i) & (t // 1000 != i // 1000)]))
 
-    t_ = []
-    for i in range(len(train_sim_mat)):
-        t = np.array(train_sim_mat[i])
-        t_.append(list(t[(t != i) & (t // 1000 != i // 1000)]))
-        # to_remove = []
-        # for j in train_sim_mat[i]:
-        #     if (i == j) or ((i // 1000) == (j // 1000)):
-        #         to_remove.append(j)
-        #
-        #     # if abs(i - j) < 5:
-        #     #     to_remove.append(j)
-        # for j in to_remove:
-        #     train_sim_mat[i].remove(j)
-    train_sim_mat = t_
+    # train_sim_mat = t_
 
     # database_sim_mat = train_sim_mat.copy()
 
@@ -517,14 +508,14 @@ def make_dataloader(params, project_params):
 
     dataloaders = {}
     train_sampler = BatchSampler(
-        datasets['train'], batch_size=32, type='train')
+        datasets['train'], batch_size=16, type='train')
     # Collate function collates items into a batch and applies a 'set transform' on the entire batch
     train_collate_fn = make_smoothap_collate_fn(datasets['train'],  0.01)
     dataloaders['train'] = DataLoader(datasets['train'], batch_sampler=train_sampler, collate_fn=train_collate_fn,
                                       num_workers=params.num_workers, pin_memory=False)
 
     if 'val' in datasets:
-        val_sampler = BatchSampler(datasets['val'], batch_size=32, type='val')
+        val_sampler = BatchSampler(datasets['val'], batch_size=16, type='val')
         # Collate function collates items into a batch and applies a 'set transform' on the entire batch
         # Currently validation dataset has empty set_transform function, but it may change in the future
         val_collate_fn = make_smoothap_collate_fn(datasets['val'], 0.01, 'val')
