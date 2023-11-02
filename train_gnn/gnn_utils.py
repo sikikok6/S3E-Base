@@ -18,6 +18,7 @@ import MinkowskiEngine as ME
 from dgl.nn.pytorch import SAGEConv
 import torch.nn.functional as F
 import dgl.function as fn
+
 # from sageconv_plus import SAGEConv_plus
 from scipy.spatial import distance
 from torch import autograd
@@ -36,20 +37,20 @@ def calc_gradient_penalty(loss_module, embeddings, e, gt_iou, mask):
     # gt_iou = autograd.Variable(gt_iou, requires_grad=True)
     # mask = autograd.Variable(gt_iou, requires_grad=True)
     losses = loss_module(logits, e, gt_iou, mask)
-    gradients = autograd.grad(outputs=losses,
-                              inputs=(logits, e),
-                              grad_outputs=torch.ones(losses.size(),
-                                                      device=losses.device),
-                              create_graph=True,
-                              retain_graph=True,
-                              allow_unused=True,
-                              only_inputs=True)[0]
-    penalty = ((gradients.norm(2, dim=1) - 1)**2).mean()
+    gradients = autograd.grad(
+        outputs=losses,
+        inputs=(logits, e),
+        grad_outputs=torch.ones(losses.size(), device=losses.device),
+        create_graph=True,
+        retain_graph=True,
+        allow_unused=True,
+        only_inputs=True,
+    )[0]
+    penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean()
     return penalty
 
 
 class MLPModel(torch.nn.Module):
-
     def __init__(self, num_i, num_h, num_o):
         super(MLPModel, self).__init__()
 
@@ -72,7 +73,9 @@ class MLPModel(torch.nn.Module):
         return x
 
 
-def load_minkLoc_model(config, model_config, pcl_weights=None, rgb_weights=None, project_args=None):
+def load_minkLoc_model(
+    config, model_config, pcl_weights=None, rgb_weights=None, project_args=None
+):
     pw = pcl_weights
     rw = rgb_weights
     # print('Weights: {}'.format(w))
@@ -90,18 +93,22 @@ def load_minkLoc_model(config, model_config, pcl_weights=None, rgb_weights=None,
     mink_model = model_factory(params)
 
     if pcl_weights is not None:
-        assert os.path.exists(
-            pcl_weights), 'Cannot open network weights: {}'.format(pcl_weights)
+        assert os.path.exists(pcl_weights), "Cannot open network weights: {}".format(
+            pcl_weights
+        )
         # print('Loading weights: {}'.format(weights))
         mink_model.cloud_fe.load_state_dict(
-            torch.load(pcl_weights, map_location=device))
+            torch.load(pcl_weights, map_location=device)
+        )
 
     if rgb_weights is not None:
-        assert os.path.exists(
-            rgb_weights), 'Cannot open network weights: {}'.format(rgb_weights)
+        assert os.path.exists(rgb_weights), "Cannot open network weights: {}".format(
+            rgb_weights
+        )
         # print('Loading weights: {}'.format(weights))
-        mink_model.load_state_dict(torch.load(
-            rgb_weights, map_location=device), strict=False)
+        mink_model.load_state_dict(
+            torch.load(rgb_weights, map_location=device), strict=False
+        )
 
     return mink_model, params
 
@@ -145,11 +152,11 @@ class myGNN(nn.Module):
 
         self.MLP = MLP(256, 1)
         # self.BN = nn.BatchNorm1d(2*in_feats)
-        self.conv1 = SAGEConv(2048, 1024, 'mean')
-        self.conv_pos_1 = SAGEConv(256, 256, 'mean')
-        self.conv_pos_2 = SAGEConv(256, 512, 'mean')
-        self.conv_feat_1 = SAGEConv(256, 256, 'mean')
-        self.conv_feat_2 = SAGEConv(256, 512, 'mean')
+        self.conv1 = SAGEConv(2048, 1024, "mean")
+        self.conv_pos_1 = SAGEConv(256, 256, "mean")
+        self.conv_pos_2 = SAGEConv(256, 512, "mean")
+        self.conv_feat_1 = SAGEConv(256, 256, "mean")
+        self.conv_feat_2 = SAGEConv(256, 512, "mean")
 
         self.mlp2 = nn.Sequential(
             nn.BatchNorm1d(in_feats),
@@ -160,7 +167,8 @@ class myGNN(nn.Module):
             nn.ReLU(),
             nn.BatchNorm1d(256),
             nn.Linear(256, 256),
-            nn.ReLU())
+            nn.ReLU(),
+        )
 
         self.mlp3 = nn.Sequential(
             nn.BatchNorm1d(7),
@@ -171,12 +179,11 @@ class myGNN(nn.Module):
             nn.ReLU(),
             nn.BatchNorm1d(128),
             nn.Linear(128, 256),
-            nn.ReLU())
+            nn.ReLU(),
+        )
 
         self.Encoder = nn.Sequential(
-            nn.BatchNorm1d(1024),
-            nn.Linear(1024, 2048),
-            nn.ReLU()
+            nn.BatchNorm1d(1024), nn.Linear(1024, 2048), nn.ReLU()
         )
 
         self.Decoder = nn.Sequential(
@@ -185,62 +192,64 @@ class myGNN(nn.Module):
             # nn.Tanh()
         )
 
-        self.EdgePose = nn.Sequential(
-            nn.Linear(2048, 7)
-        )
+        self.EdgePose = nn.Sequential(nn.Linear(2048, 7))
 
     def edge_score(self, edges):
-        h_u = edges.src['x']
-        h_v = edges.dst['x']
+        h_u = edges.src["x"]
+        h_v = edges.dst["x"]
         # score = self.MLP(torch.cat((h_u, h_v), 1))
         score = self.MLP(h_u - h_v)
-        return {'score': score}
+        return {"score": score}
 
     def edge_pose(self, edges):
-        h_u = edges.src['x']
-        h_v = edges.dst['x']
+        h_u = edges.src["x"]
+        h_v = edges.dst["x"]
         pose = self.EdgePose(torch.cat((h_u, h_v), dim=1))
-        return {'pose': pose}
+        return {"pose": pose}
 
     def pose_multipy(self, ori_pose, delta_pose):
-        index_delta = torch.tensor([[[3, 0, 1, 2] for _ in range(delta_pose.shape[1])]
-                                   for _ in range(delta_pose.shape[0])]).cuda()
+        index_delta = torch.tensor(
+            [
+                [[3, 0, 1, 2] for _ in range(delta_pose.shape[1])]
+                for _ in range(delta_pose.shape[0])
+            ]
+        ).cuda()
         index_ori = torch.tensor([[[3, 0, 1, 2]]]).cuda()
-        re_index = torch.tensor([[[1, 2, 3, 0] for _ in range(delta_pose.shape[1])]
-                                for _ in range(delta_pose.shape[0])]).cuda()
+        re_index = torch.tensor(
+            [
+                [[1, 2, 3, 0] for _ in range(delta_pose.shape[1])]
+                for _ in range(delta_pose.shape[0])
+            ]
+        ).cuda()
         ori_pos = ori_pose[:, :3].unsqueeze(1)
         ori_rot = ori_pose[:, 3:].unsqueeze(1)
         delta_pos = delta_pose[:, :, :3] + ori_pos
         delta_rot = p3dtrans.quaternion_multiply(
             F.normalize(ori_rot, p=2, dim=2).gather(2, index_ori),
-            F.normalize(delta_pose[:, :, 3:], p=2, dim=2).gather(2, index_delta))
+            F.normalize(delta_pose[:, :, 3:], p=2, dim=2).gather(2, index_delta),
+        )
         return torch.cat((delta_pos, delta_rot.gather(2, re_index)), dim=2)
 
     def forward(self, g_fc, g, x, x_pose):
-
         batch_size = len(x)
-        x = self.mlp2(x.view((-1, 256))
-                      )
+        x = self.mlp2(x.view((-1, 256)))
         with g_fc.local_scope():
-            g_fc.ndata['x'] = x
+            g_fc.ndata["x"] = x
             g_fc.apply_edges(self.edge_score)
-            e = g_fc.edata['score']
+            e = g_fc.edata["score"]
 
         A_feat = self.conv_feat_1(g_fc, x, e)
         A_feat = self.conv_feat_2(g_fc, A_feat, e).view((batch_size, 21, -1))
 
-        x_pose = self.mlp3(x_pose.view((-1, 7))
-                           )
+        x_pose = self.mlp3(x_pose.view((-1, 7)))
         A_pose = self.conv_pos_1(g_fc, x_pose, e)
         A_pose = self.conv_pos_2(g_fc, A_pose, e).view((batch_size, 21, -1))
 
-        x = self.Encoder(torch.cat((A_feat, A_pose), dim=2).view((-1, 1024))
-                         )
+        x = self.Encoder(torch.cat((A_feat, A_pose), dim=2).view((-1, 1024)))
         # x = self.BN(x)
 
         # e_g = e.view((batch_size, -1, 1))[:, 1:11].reshape((-1, 1))
-        A = self.conv1(
-            g_fc, x, e)
+        A = self.conv1(g_fc, x, e)
         # .view((batch_size, 11, -1))
         # A = self.conv1(g, x)
 
@@ -248,12 +257,11 @@ class myGNN(nn.Module):
         # est_pose = self.Decoder(A[:, 0]).unsqueeze(1)
         est_pose = self.Decoder(A).view((batch_size, 21, -1))
         with g.local_scope():
-            g.ndata['x'] = A
+            g.ndata["x"] = A
             g.apply_edges(self.edge_pose)
-            deltaPose = g.edata['pose']
+            deltaPose = g.edata["pose"]
 
-        q2r = self.pose_multipy(
-            est_pose[:, 0], deltaPose.view((batch_size, 20, -1)))
+        q2r = self.pose_multipy(est_pose[:, 0], deltaPose.view((batch_size, 20, -1)))
 
         # est_pose = A[0, 512:]
 
@@ -268,7 +276,7 @@ class myGNN(nn.Module):
 
 
 def split_batch(lst, batch_size):
-    return [lst[i:i + batch_size] for i in range(0, len(lst), batch_size)]
+    return [lst[i : i + batch_size] for i in range(0, len(lst), batch_size)]
 
 
 class BatchSampler(Sampler):
@@ -288,7 +296,7 @@ class BatchSampler(Sampler):
         self.elems_ndx = list(self.dataset.queries)
 
     def __iter__(self):
-        if self.type == 'train':
+        if self.type == "train":
             # self.generate_top_batches()
             self.generate_smoothap_batches()
             # self.generate_smoothap_batches()
@@ -328,10 +336,8 @@ class PoseLoss(nn.Module):
             self.sx = 0.0
             self.sq = -6.25
 
-        self.sx = nn.Parameter(torch.Tensor(
-            [sx]), requires_grad=self.learn_beta)
-        self.sq = nn.Parameter(torch.Tensor(
-            [sq]), requires_grad=self.learn_beta)
+        self.sx = nn.Parameter(torch.Tensor([sx]), requires_grad=self.learn_beta)
+        self.sq = nn.Parameter(torch.Tensor([sq]), requires_grad=self.learn_beta)
         self.loss_print = None
 
     def forward(self, pred_x, pred_q, target_x, target_q):
@@ -339,10 +345,12 @@ class PoseLoss(nn.Module):
         loss_x = F.l1_loss(pred_x, target_x)
         loss_q = F.l1_loss(pred_q, target_q)
 
-        loss = torch.exp(-self.sx)*loss_x \
-            + self.sx \
-            + torch.exp(-self.sq)*loss_q \
+        loss = (
+            torch.exp(-self.sx) * loss_x
+            + self.sx
+            + torch.exp(-self.sq) * loss_q
             + self.sq
+        )
 
         self.loss_print = [loss.item(), loss_x.item(), loss_q.item()]
 
@@ -361,7 +369,9 @@ def in_sorted_array(e: int, array: np.ndarray) -> bool:
         # return True
 
 
-def make_smoothap_collate_fn(dataset: ScanNetDataset, mink_quantization_size=None, val=None):
+def make_smoothap_collate_fn(
+    dataset: ScanNetDataset, mink_quantization_size=None, val=None
+):
     # set_transform: the transform to be applied to all batch elements
 
     def collate_fn(data_list):
@@ -384,13 +394,17 @@ def make_smoothap_collate_fn(dataset: ScanNetDataset, mink_quantization_size=Non
 
         # dataset.queries[labels[0]]
 
-        if val != 'val':
+        if val != "val":
             for i in range(len(labels)):
-                labels[i].extend(train_sim_mat[labels[i][0]][1:num+1])
-                positives_mask = [in_sorted_array(
-                    e, dataset.queries[labels[i][0]].positives) for e in labels[i]]
-                hard_positives_mask = [in_sorted_array(
-                    e, dataset.queries[labels[i][0]].hard_positives) for e in labels[i]]
+                labels[i].extend(train_sim_mat[labels[i][0]][1 : num + 1])
+                positives_mask = [
+                    in_sorted_array(e, dataset.queries[labels[i][0]].positives)
+                    for e in labels[i]
+                ]
+                hard_positives_mask = [
+                    in_sorted_array(e, dataset.queries[labels[i][0]].hard_positives)
+                    for e in labels[i]
+                ]
                 positives_mask[0] = True
                 negatives_mask = [not item for item in positives_mask]
                 positives_masks.append(positives_mask)
@@ -399,16 +413,19 @@ def make_smoothap_collate_fn(dataset: ScanNetDataset, mink_quantization_size=Non
                 # positives_mask = torch.tensor([positives_mask])
                 # negatives_mask = torch.tensor([negatives_mask])
                 # hard_positives_mask = torch.tensor([hard_positives_mask])
-                most_positives_mask = [in_sorted_array(
-                    e, dataset.queries[labels[i][0]].most_positive) for e in labels[i]]
+                most_positives_mask = [
+                    in_sorted_array(e, dataset.queries[labels[i][0]].most_positive)
+                    for e in labels[i]
+                ]
                 # most_positives_mask = torch.tensor([most_positives_mask])
                 most_positives_masks.append(most_positives_mask)
         else:
             for i in range(len(labels)):
-
                 labels[i].extend(query_sim_mat[labels[i][0]][:num])
-                positives_mask = [in_sorted_array(
-                    e, dataset.queries[labels[i][0]].positives) for e in labels[i]]
+                positives_mask = [
+                    in_sorted_array(e, dataset.queries[labels[i][0]].positives)
+                    for e in labels[i]
+                ]
                 # hard_positives_mask = [in_sorted_array(
                 #     e, dataset.queries[labels[0]].hard_positives) for e in labels]
                 positives_mask[0] = True
@@ -419,13 +436,15 @@ def make_smoothap_collate_fn(dataset: ScanNetDataset, mink_quantization_size=Non
                 # positives_mask = torch.tensor([positives_mask])
                 # negatives_mask = torch.tensor([negatives_mask])
                 # hard_positives_mask = torch.tensor([hard_positives_mask])
-                most_positives_mask = [in_sorted_array(
-                    e, dataset.queries[labels[i][0]].most_positive) for e in labels[i]]
+                most_positives_mask = [
+                    in_sorted_array(e, dataset.queries[labels[i][0]].most_positive)
+                    for e in labels[i]
+                ]
                 # most_positives_mask = torch.tensor([most_positives_mask])
                 most_positives_masks.append(most_positives_mask)
 
         neighbours = []
-        if val == 'val':
+        if val == "val":
             for i in range(len(labels)):
                 neighbours.append(query_sim_mat[labels[i][0]][:num])
             # neighbours_temp = [database_sim_mat[item][1:num+1]
@@ -442,7 +461,7 @@ def make_smoothap_collate_fn(dataset: ScanNetDataset, mink_quantization_size=Non
             # neighbours.append(temp)
 
         valid_mask = torch.sum(torch.tensor(positives_masks), -1) != 1
-        if val == 'val':
+        if val == "val":
             valid_mask = torch.ones(valid_mask.shape, dtype=torch.bool)
         positives_masks = torch.tensor(positives_masks)[valid_mask]
         negatives_masks = torch.tensor(negatives_masks)[valid_mask]
@@ -451,7 +470,15 @@ def make_smoothap_collate_fn(dataset: ScanNetDataset, mink_quantization_size=Non
         neighbours = torch.tensor(neighbours)[valid_mask]
         most_positives_masks = torch.tensor(most_positives_masks)[valid_mask]
 
-        return positives_masks, negatives_masks, hard_positives_masks, labels, neighbours, most_positives_masks, None
+        return (
+            positives_masks,
+            negatives_masks,
+            hard_positives_masks,
+            labels,
+            neighbours,
+            most_positives_masks,
+            None,
+        )
 
         # return torch.tensor(positives_masks)[valid_mask], torch.tensor(negatives_masks)[valid_mask], torch.tensor(hard_positives_masks)[valid_mask], torch.tensor(labels)[valid_mask], torch.tensor(neighbours)[valid_mask], torch.tensor(most_positives_masks)[valid_mask], None
 
@@ -460,19 +487,17 @@ def make_smoothap_collate_fn(dataset: ScanNetDataset, mink_quantization_size=Non
 
 def make_dataloader(params, project_params):
     datasets = {}
-    dataset_folder = os.path.join(
-        project_params.dataset_dir, project_params.scene)
-    train_file = 'pickle/' + project_params.scene + '_train_overlap.pickle'
-    test_file = 'pickle/' + project_params.scene + '_test_overlap.pickle'
+    dataset_folder = os.path.join(project_params.dataset_dir, project_params.scene)
+    train_file = "pickle/" + project_params.scene + "_train_overlap.pickle"
+    test_file = "pickle/" + project_params.scene + "_test_overlap.pickle"
 
     train_transform = TrainTransform(1)
     train_set_transform = TrainSetTransform(1)
 
-    train_embeddings = np.load('./gnn_pre_train_embeddings.npy')
-    test_embeddings = np.load('./gnn_pre_test_embeddings.npy')
+    train_embeddings = np.load("./gnn_pre_train_embeddings.npy")
+    test_embeddings = np.load("./gnn_pre_test_embeddings.npy")
 
-    database_len = len(
-        test_embeddings) // 2 if len(test_embeddings) < 4000 else 3000
+    database_len = len(test_embeddings) // 2 if len(test_embeddings) < 4000 else 3000
     database_embeddings = test_embeddings[:database_len]
     query_embeddings = test_embeddings[database_len:]
     global train_sim_mat
@@ -500,27 +525,37 @@ def make_dataloader(params, project_params):
 
     # database_sim_mat = train_sim_mat.copy()
 
-    datasets['train'] = ScanNetDataset(dataset_folder, train_file, train_transform,
-                                       set_transform=train_set_transform)
-    datasets['val'] = ScanNetDataset(dataset_folder, test_file, None)
+    datasets["train"] = ScanNetDataset(
+        dataset_folder, train_file, train_transform, set_transform=train_set_transform
+    )
+    datasets["val"] = ScanNetDataset(dataset_folder, test_file, None)
 
     val_transform = None
 
     dataloaders = {}
-    train_sampler = BatchSampler(
-        datasets['train'], batch_size=16, type='train')
+    train_sampler = BatchSampler(datasets["train"], batch_size=16, type="train")
     # Collate function collates items into a batch and applies a 'set transform' on the entire batch
-    train_collate_fn = make_smoothap_collate_fn(datasets['train'],  0.01)
-    dataloaders['train'] = DataLoader(datasets['train'], batch_sampler=train_sampler, collate_fn=train_collate_fn,
-                                      num_workers=params.num_workers, pin_memory=False)
+    train_collate_fn = make_smoothap_collate_fn(datasets["train"], 0.01)
+    dataloaders["train"] = DataLoader(
+        datasets["train"],
+        batch_sampler=train_sampler,
+        collate_fn=train_collate_fn,
+        num_workers=params.num_workers,
+        pin_memory=False,
+    )
 
-    if 'val' in datasets:
-        val_sampler = BatchSampler(datasets['val'], batch_size=16, type='val')
+    if "val" in datasets:
+        val_sampler = BatchSampler(datasets["val"], batch_size=16, type="val")
         # Collate function collates items into a batch and applies a 'set transform' on the entire batch
         # Currently validation dataset has empty set_transform function, but it may change in the future
-        val_collate_fn = make_smoothap_collate_fn(datasets['val'], 0.01, 'val')
-        dataloaders['val'] = DataLoader(datasets['val'], batch_sampler=val_sampler, collate_fn=val_collate_fn,
-                                        num_workers=params.num_workers, pin_memory=True)
+        val_collate_fn = make_smoothap_collate_fn(datasets["val"], 0.01, "val")
+        dataloaders["val"] = DataLoader(
+            datasets["val"],
+            batch_sampler=val_sampler,
+            collate_fn=val_collate_fn,
+            num_workers=params.num_workers,
+            pin_memory=True,
+        )
     return dataloaders
 
 
@@ -532,11 +567,12 @@ def load_data_item(file_name, params, project_params, fp):
     if params.use_cloud:
         pc = np.fromfile(os.path.join(fp, file_name), dtype=np.float64)
         # coords are within -1..1 range in each dimension
-        assert pc.shape[0] == params.num_points * \
-            3, "Error in point cloud shape: {}".format(file_path)
+        assert (
+            pc.shape[0] == params.num_points * 3
+        ), "Error in point cloud shape: {}".format(file_path)
         pc = np.reshape(pc, (pc.shape[0] // 3, 3))
         pc = torch.tensor(pc, dtype=torch.float)
-        result['coords'] = pc
+        result["coords"] = pc
 
     if params.use_rgb:
         # Get the first closest image for each LiDAR scan
@@ -547,54 +583,62 @@ def load_data_item(file_name, params, project_params, fp):
         #     lidar2image_ndx[i] = [i]
         # img = image4lidar(file_name, None,
         #                   None, None, k=1)
-        img = Image.open(os.path.join(project_params.dataset_dir, project_params.scene,
-                                      'color', file_name.replace('bin', 'color.png')))
+        img = Image.open(
+            os.path.join(
+                project_params.dataset_dir,
+                project_params.scene,
+                "color",
+                file_name.replace("bin", "color.png"),
+            )
+        )
         transform = ValRGBTransform()
         # Convert to tensor and normalize
-        result['image'] = transform(img)
+        result["image"] = transform(img)
 
     return result
 
 
 def get_embeddings_3d(model, params, project_params, device, scene):
-
     model.eval()
     embeddings_l = []
-    file_path = '{}/{}/{}/pointcloud_4096'.format(
-        project_params.dataset_dir, project_params.scene, scene)
+    file_path = "{}/{}/{}/pointcloud_4096".format(
+        project_params.dataset_dir, project_params.scene, scene
+    )
     file_li = os.listdir(file_path)
     file_li.sort()
 
     for elem_ndx in tqdm.tqdm(range(len(file_li))):
-
-        x = load_data_item(
-            file_li[max(elem_ndx, 0)], params, project_params, file_path)
+        x = load_data_item(file_li[max(elem_ndx, 0)], params, project_params, file_path)
 
         with torch.no_grad():
             # coords are (n_clouds, num_points, channels) tensor
             batch = {}
             if params.use_cloud:
-                coords = ME.utils.sparse_quantize(coordinates=x['coords'],
-                                                  quantization_size=params.model_params.mink_quantization_size)
+                coords = ME.utils.sparse_quantize(
+                    coordinates=x["coords"],
+                    quantization_size=params.model_params.mink_quantization_size,
+                )
                 bcoords = ME.utils.batched_coordinates([coords]).to(device)
                 # Assign a dummy feature equal to 1 to each point
-                feats = torch.ones(
-                    (bcoords.shape[0], 1), dtype=torch.float32).to(device)
-                batch['coords'] = bcoords
-                batch['features'] = feats
+                feats = torch.ones((bcoords.shape[0], 1), dtype=torch.float32).to(
+                    device
+                )
+                batch["coords"] = bcoords
+                batch["features"] = feats
 
             if params.use_rgb:
                 # batch['images'] = torch.stack([x_m_1['image'].to(device), x['image'].to(
                 #     device), x_p_1['image'].to(device)]).unsqueeze(0).to(device)
-                batch['images'] = x['image'].to(device).unsqueeze(0).to(device)
+                batch["images"] = x["image"].to(device).unsqueeze(0).to(device)
 
             x = model(batch)
-            embedding = x['embedding']
+            embedding = x["embedding"]
 
             # embedding is (1, 256) tensor
             # if params.normalize_embeddings:
             embedding = torch.nn.functional.normalize(
-                embedding, p=2, dim=1)  # Normalize embeddings
+                embedding, p=2, dim=1
+            )  # Normalize embeddings
 
         embedding = embedding.detach().cpu().numpy()
         embeddings_l.append(embedding)
@@ -632,19 +676,21 @@ def inverse_poses(poses_in):
 
 
 def get_poses(scene, project_params):
-    file_path = '{}/{}/{}/pointcloud_4096'.format(project_params.dataset_dir, project_params.scene,
-                                                  scene)
+    file_path = "{}/{}/{}/pointcloud_4096".format(
+        project_params.dataset_dir, project_params.scene, scene
+    )
     file_li = os.listdir(file_path)
     file_li.sort()
-    file_pose = [filename.replace('.bin', '.pose.txt') for filename in file_li]
+    file_pose = [filename.replace(".bin", ".pose.txt") for filename in file_li]
     file_pose.sort()
-    file_pose_path = file_path.replace('pointcloud_4096', 'pose')
+    file_pose_path = file_path.replace("pointcloud_4096", "pose")
     embeddings_pose_l = []
 
     for elem_ndx in tqdm.tqdm(range(len(file_li))):
         # add for pose
-        embeddings_pose = np.loadtxt(os.path.join(
-            file_pose_path, file_pose[max(elem_ndx, 0)]))
+        embeddings_pose = np.loadtxt(
+            os.path.join(file_pose_path, file_pose[max(elem_ndx, 0)])
+        )
         # trans pose to 3 + 4
         embeddings_pose = process_poses(embeddings_pose)
 
@@ -666,20 +712,24 @@ def cal_trans_rot_error(pred_pose, gt_pose):
     pred_translation = pred_pose[:, :3]
     gt_translation = gt_pose[:, :3]
 
-    pred_R_arr = [R.from_quat(pred_pose[i, 3:]).as_matrix()
-                  for i in range(len(pred_translation))]
-    gt_R_arr = [R.from_quat(gt_pose[i, 3:]).as_matrix()
-                for i in range(len(pred_translation))]
+    pred_R_arr = [
+        R.from_quat(pred_pose[i, 3:]).as_matrix() for i in range(len(pred_translation))
+    ]
+    gt_R_arr = [
+        R.from_quat(gt_pose[i, 3:]).as_matrix() for i in range(len(pred_translation))
+    ]
 
     cal_R_arr = [pred_R_arr[i].T @ gt_R_arr[i] for i in range(len(pred_R_arr))]
 
-    r_arr = [R.from_matrix(
-        cal_R_arr[i]).as_rotvec() for i in range(len(cal_R_arr))]
-    rotation_error_degs = [np.linalg.norm(
-        r_arr[i]) * 180 / np.pi for i in range(len(r_arr))]
+    r_arr = [R.from_matrix(cal_R_arr[i]).as_rotvec() for i in range(len(cal_R_arr))]
+    rotation_error_degs = [
+        np.linalg.norm(r_arr[i]) * 180 / np.pi for i in range(len(r_arr))
+    ]
 
-    translation_errors = [np.linalg.norm(
-        pred_translation[i] - gt_translation[i]) for i in range(len(pred_translation))]
+    translation_errors = [
+        np.linalg.norm(pred_translation[i] - gt_translation[i])
+        for i in range(len(pred_translation))
+    ]
 
     return np.mean(translation_errors), np.mean(rotation_error_degs)
 
@@ -704,8 +754,9 @@ def cal_trans_rot_error(pred_pose, gt_pose):
 
 
 def get_embeddings(mink_model, params, device, scene):
-    file_path = '/home/ubuntu-user/S3E-backup/datasetfiles/datasets/fire/{}/pointcloud_4096'.format(
-        scene)
+    file_path = "/home/ubuntu-user/S3E-backup/datasetfiles/datasets/fire/{}/pointcloud_4096".format(
+        scene
+    )
     file_li = os.listdir(file_path)
     file_li.sort()
     embeddings_l = []
@@ -715,20 +766,23 @@ def get_embeddings(mink_model, params, device, scene):
 
         # coords are (n_clouds, num_points, channels) tensor
         with torch.no_grad():
-            coords = ME.utils.sparse_quantize(coordinates=x,
-                                              quantization_size=params.model_params.mink_quantization_size)
+            coords = ME.utils.sparse_quantize(
+                coordinates=x,
+                quantization_size=params.model_params.mink_quantization_size,
+            )
             bcoords = ME.utils.batched_coordinates([coords])
             # Assign a dummy feature equal to 1 to each point
             # Coords must be on CPU, features can be on GPU - see MinkowskiEngine documentation
             feats = torch.ones((bcoords.shape[0], 1), dtype=torch.float32)
-            b = {'coords': bcoords.to(device), 'features': feats.to(device)}
+            b = {"coords": bcoords.to(device), "features": feats.to(device)}
 
             x = mink_model(b)
-            embedding = x['embedding']
+            embedding = x["embedding"]
             # embedding is (1, 1024) tensor
             if params.normalize_embeddings:
                 embedding = torch.nn.functional.normalize(
-                    embedding, p=2, dim=1)  # Normalize embeddings
+                    embedding, p=2, dim=1
+                )  # Normalize embeddings
 
         embedding = embedding.detach().cpu().numpy()
         embeddings_l.append(embedding)
