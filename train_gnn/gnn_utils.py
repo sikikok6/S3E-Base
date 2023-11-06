@@ -463,6 +463,8 @@ def make_smoothap_collate_fn(
         valid_mask = torch.sum(torch.tensor(positives_masks), -1) != 1
         if val == "val":
             valid_mask = torch.ones(valid_mask.shape, dtype=torch.bool)
+        valid_mask = torch.ones(valid_mask.shape, dtype=torch.bool)
+
         positives_masks = torch.tensor(positives_masks)[valid_mask]
         negatives_masks = torch.tensor(negatives_masks)[valid_mask]
         hard_positives_masks = torch.tensor(hard_positives_masks)[valid_mask]
@@ -494,12 +496,21 @@ def make_dataloader(params, project_params):
     train_transform = TrainTransform(1)
     train_set_transform = TrainSetTransform(1)
 
+    train_poses = get_poses("train", project_params)
+    test_poses = get_poses("test", project_params)
+    np.save("./train_poses.npy", train_poses)
+    np.save("./test_poses.npy", test_poses)
+
     train_embeddings = np.load("./gnn_pre_train_embeddings.npy")
     test_embeddings = np.load("./gnn_pre_test_embeddings.npy")
 
     database_len = len(test_embeddings) // 2 if len(test_embeddings) < 4000 else 3000
     database_embeddings = test_embeddings[:database_len]
     query_embeddings = test_embeddings[database_len:]
+
+    train_embeddings = train_poses[:, :3]
+    database_embeddings = test_poses[:database_len, :3]
+
     global train_sim_mat
     global database_sim_mat
     global query_sim_mat
@@ -509,9 +520,11 @@ def make_dataloader(params, project_params):
     # database_sim = train_sim.copy()
     # query_sim = distance.cdist(database_embeddings, train_embeddings)
     query_sim = database_sim.copy()
+    print(train_sim)
     print(query_sim.shape)
 
     train_sim_mat = np.argsort(train_sim).tolist()
+    print(np.array(train_sim_mat))
     database_sim_mat = np.argsort(database_sim).tolist()
     query_sim_mat = np.argsort(query_sim).tolist()
     # train_sim_mat = []

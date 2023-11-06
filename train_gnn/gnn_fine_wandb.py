@@ -349,7 +349,7 @@ with tqdm.tqdm(range(200), position=0, desc="epoch", ncols=60) as tbar:
                     # hard_pos_mask[:, 0] = True
                     # hard_p_mask = hard_pos_mask[pos_mask].unsqueeze(0)
 
-                    ap_coarse = smoothap(sim_mat, pos_mask)
+                    # ap_coarse = smoothap(sim_mat, pos_mask)
 
                     # ap_fine = smoothap(hard_sim_mat, hard_p_mask)
 
@@ -389,13 +389,14 @@ with tqdm.tqdm(range(200), position=0, desc="epoch", ncols=60) as tbar:
 
                     # train_loss_ap = 1 - (0.7*ap_coarse + 0.3*ap_fine)
 
-                    train_loss_ap = (1 - ap_coarse).mean()
-                    train_loss_mse1 = loss_affinity_1 + train_loss_ap
+                    # train_loss_ap = (1 - ap_coarse).mean()
+                    # train_loss_mse1 = loss_affinity_1 + train_loss_ap
+                    train_loss_mse1 = loss_affinity_1
                     train_loss_pos = loss_pos
                     # Here have beta
                     train_loss_ori = beta * loss_ori
                     # train_loss_pos_ori = train_loss_pos + train_loss_ori
-                    train_loss_pos_ori = loss_pose + loss_pose_q2r
+                    train_loss_pos_ori = loss_pose
 
                     batch_loss = alpha * train_loss_mse1 + gamma * (loss_pose)
                     pred_pose = np.hstack(
@@ -422,7 +423,7 @@ with tqdm.tqdm(range(200), position=0, desc="epoch", ncols=60) as tbar:
                     trans_loss += trans_error
                     rotation_loss += rot_error
 
-                    train_loss_dic["ap"].append(train_loss_ap.item())
+                    # train_loss_dic["ap"].append(train_loss_ap.item())
                     train_loss_dic["mse1"].append(alpha * train_loss_mse1.item())
                     train_loss_dic["pos"].append(train_loss_pos)
                     train_loss_dic["ori"].append(train_loss_ori)
