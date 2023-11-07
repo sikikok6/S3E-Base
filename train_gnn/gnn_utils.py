@@ -186,9 +186,15 @@ class myGNN(nn.Module):
             nn.BatchNorm1d(1024), nn.Linear(1024, 2048), nn.ReLU()
         )
 
-        self.Decoder = nn.Sequential(
+        self.TransDecoder = nn.Sequential(
             nn.BatchNorm1d(1024),
-            nn.Linear(1024, 7)
+            nn.Linear(1024, 3)
+            # nn.Tanh()
+        )
+
+        self.OriDecoder = nn.Sequential(
+            nn.BatchNorm1d(1024),
+            nn.Linear(1024, 4)
             # nn.Tanh()
         )
 
@@ -260,18 +266,23 @@ class myGNN(nn.Module):
 
         # A = F.leaky_relu(A)
         # est_pose = self.Decoder(A[:, 0]).unsqueeze(1)
-        est_pose = self.Decoder(A).view((batch_size, 21, -1))
+        pos_out = self.TransDecoder(A).view((batch_size, 21, -1))
+        ori_out = self.OriDecoder(A).view((batch_size, 21, -1))
         with g.local_scope():
             g.ndata["x"] = A
             g.apply_edges(self.edge_pose)
             deltaPose = g.edata["pose"]
 
-        q2r = self.pose_multipy(est_pose[:, 0], deltaPose.view((batch_size, 20, -1)))
+        # q2r = self.pose_multipy(est_pose[:, 0], deltaPose.view((batch_size, 20, -1)))
+        q2r = self.pose_multipy(
+            torch.cat((pos_out, ori_out), dim=2)[:, 0],
+            deltaPose.view((batch_size, 20, -1)),
+        )
 
         # est_pose = A[0, 512:]
 
-        pos_out = est_pose[:, :, :3]
-        ori_out = est_pose[:, :, 3:]
+        # pos_out = est_pose[:, :, :3]
+        # ori_out = est_pose[:, :, 3:]
 
         # A = A[:, :512]
 
@@ -468,7 +479,7 @@ def make_smoothap_collate_fn(
         valid_mask = torch.sum(torch.tensor(positives_masks), -1) != 1
         if val == "val":
             valid_mask = torch.ones(valid_mask.shape, dtype=torch.bool)
-        # valid_mask = torch.ones(valid_mask.shape, dtype=torch.bool)
+        valid_mask = torch.ones(valid_mask.shape, dtype=torch.bool)
 
         positives_masks = torch.tensor(positives_masks)[valid_mask]
         negatives_masks = torch.tensor(negatives_masks)[valid_mask]
@@ -513,8 +524,8 @@ def make_dataloader(params, project_params):
     database_embeddings = test_embeddings[:database_len]
     query_embeddings = test_embeddings[database_len:]
 
-    # train_embeddings = train_poses[:, :3]
-    # database_embeddings = test_poses[:database_len, :3]
+    train_embeddings = train_poses[:, :3]
+    database_embeddings = test_poses[:database_len, :3]
 
     global train_sim_mat
     global database_sim_mat

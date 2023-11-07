@@ -402,7 +402,9 @@ with tqdm.tqdm(range(200), position=0, desc="epoch", ncols=60) as tbar:
                     # train_loss_pos_ori = train_loss_pos + train_loss_ori
                     train_loss_pos_ori = loss_pose
 
-                    batch_loss = alpha * train_loss_mse1 + gamma * (loss_pose)
+                    batch_loss = alpha * train_loss_mse1 + gamma * (
+                        loss_pose + loss_pose_q2r
+                    )
                     pred_pose = np.hstack(
                         (
                             pos_pred.detach().cpu().numpy(),
