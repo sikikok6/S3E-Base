@@ -230,6 +230,11 @@ class myGNN(nn.Module):
         )
         return torch.cat((delta_pos, delta_rot.gather(2, re_index)), dim=2)
 
+    def freeze_except_decoder(self):
+        for name, param in self.named_parameters():
+            if "Decoder" not in name or "EdgePose" not in name:
+                param.requires_grad = False
+
     def forward(self, g_fc, g, x, x_pose):
         batch_size = len(x)
         x = self.mlp2(x.view((-1, 256)))
@@ -463,7 +468,7 @@ def make_smoothap_collate_fn(
         valid_mask = torch.sum(torch.tensor(positives_masks), -1) != 1
         if val == "val":
             valid_mask = torch.ones(valid_mask.shape, dtype=torch.bool)
-        valid_mask = torch.ones(valid_mask.shape, dtype=torch.bool)
+        # valid_mask = torch.ones(valid_mask.shape, dtype=torch.bool)
 
         positives_masks = torch.tensor(positives_masks)[valid_mask]
         negatives_masks = torch.tensor(negatives_masks)[valid_mask]
@@ -508,8 +513,8 @@ def make_dataloader(params, project_params):
     database_embeddings = test_embeddings[:database_len]
     query_embeddings = test_embeddings[database_len:]
 
-    train_embeddings = train_poses[:, :3]
-    database_embeddings = test_poses[:database_len, :3]
+    # train_embeddings = train_poses[:, :3]
+    # database_embeddings = test_poses[:database_len, :3]
 
     global train_sim_mat
     global database_sim_mat

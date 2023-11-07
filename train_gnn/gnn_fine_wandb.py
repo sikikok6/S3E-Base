@@ -238,6 +238,7 @@ pose_loss.eval()
 pdist = nn.PairwiseDistance(p=2)
 cos = nn.CosineSimilarity(dim=2).cuda()
 
+
 max_ = 0.0
 node_nums = 20
 # labels = range(len(feat))
@@ -295,9 +296,12 @@ with tqdm.tqdm(range(200), position=0, desc="epoch", ncols=60) as tbar:
                 g_fc_arr = [g_fc] * len(pos_mask)
                 g_fc_batch = dgl.batch(g_fc_arr)
                 torch.cuda.empty_cache()
+
                 model.train()
 
                 with torch.enable_grad():
+                    # if epoch > 40:
+                    #     model.freeze_except_decoder()
                     ind = labels.clone().detach()
 
                     """Key Here To Change Poses For Query"""
