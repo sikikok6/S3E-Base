@@ -92,6 +92,8 @@ def load_minkLoc_model(
 
     mink_model = model_factory(params)
 
+    """
+
     if pcl_weights is not None:
         assert os.path.exists(pcl_weights), "Cannot open network weights: {}".format(
             pcl_weights
@@ -110,6 +112,7 @@ def load_minkLoc_model(
             torch.load(rgb_weights, map_location=device), strict=False
         )
 
+    """
     return mink_model, params
 
 
@@ -342,6 +345,7 @@ class BatchSampler(Sampler):
             self.batch_idx.append(ndx)
         self.batch_idx = split_batch(self.batch_idx, self.batch_size)
 
+
 def vdot(v1, v2):
     """
     Dot product along the dim=1
@@ -352,6 +356,7 @@ def vdot(v1, v2):
     out = torch.mul(v1, v2)
     out = torch.sum(out, 1)
     return out
+
 
 class QuaternionLoss(nn.Module):
     """
@@ -511,7 +516,7 @@ def make_smoothap_collate_fn(
         valid_mask = torch.sum(torch.tensor(positives_masks), -1) != 1
         if val == "val":
             valid_mask = torch.ones(valid_mask.shape, dtype=torch.bool)
-        # valid_mask = torch.ones(valid_mask.shape, dtype=torch.bool)
+        valid_mask = torch.ones(valid_mask.shape, dtype=torch.bool)
 
         positives_masks = torch.tensor(positives_masks)[valid_mask]
         negatives_masks = torch.tensor(negatives_masks)[valid_mask]

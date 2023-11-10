@@ -111,13 +111,13 @@ mink_model, params = load_minkLoc_model(
 mink_model.to(device)
 
 """If Not Save,Run"""
-# embs = np.array(get_embeddings_3d(
-#     mink_model, params, project_args, 'cuda', 'train'))
+# embs = np.array(get_embeddings_3d(mink_model, params, project_args, "cuda", "train"))
 # print(embs.shape)
-# np.save('./gnn_pre_train_embeddings.npy', embs)
-# test_embs = np.array(get_embeddings_3d(
-#     mink_model, params, project_args, 'cuda', 'test'))
-# np.save('./gnn_pre_test_embeddings.npy', test_embs)
+# np.save("./gnn_pre_train_embeddings.npy", embs)
+# test_embs = np.array(
+#     get_embeddings_3d(mink_model, params, project_args, "cuda", "test")
+# )
+# np.save("./gnn_pre_test_embeddings.npy", test_embs)
 
 
 # load dataloaders
@@ -233,7 +233,10 @@ pose_loss = PoseLoss(learn_beta=True).to("cuda")
 pose_loss.eval()
 
 opt = torch.optim.Adam(
-    [{"params": model.parameters(), "lr": 0.0001, "weight_decay": 0.001}, {"params": criterion_pose.parameters()}]
+    [
+        {"params": model.parameters(), "lr": 0.0001, "weight_decay": 0.001},
+        {"params": criterion_pose.parameters()},
+    ]
 )
 
 pdist = nn.PairwiseDistance(p=2)
@@ -354,7 +357,7 @@ with tqdm.tqdm(range(200), position=0, desc="epoch", ncols=60) as tbar:
                     # hard_pos_mask[:, 0] = True
                     # hard_p_mask = hard_pos_mask[pos_mask].unsqueeze(0)
 
-                    ap_coarse = smoothap(sim_mat, pos_mask)
+                    # ap_coarse = smoothap(sim_mat, pos_mask)
 
                     # ap_fine = smoothap(hard_sim_mat, hard_p_mask)
 
@@ -394,9 +397,9 @@ with tqdm.tqdm(range(200), position=0, desc="epoch", ncols=60) as tbar:
 
                     # train_loss_ap = 1 - (0.7*ap_coarse + 0.3*ap_fine)
 
-                    train_loss_ap = (1 - ap_coarse).mean()
-                    train_loss_mse1 = loss_affinity_1 + train_loss_ap
-                    # train_loss_mse1 = loss_affinity_1
+                    # train_loss_ap = (1 - ap_coarse).mean()
+                    # train_loss_mse1 = loss_affinity_1 + train_loss_ap
+                    train_loss_mse1 = loss_affinity_1
                     train_loss_pos = loss_pos
                     # Here have beta
                     train_loss_ori = beta * loss_ori
