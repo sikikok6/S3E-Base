@@ -207,6 +207,7 @@ class ResNet(nn.Module):
         feat3 = self.layer2(feat2)
         feat4 = self.layer3(feat3)
         feat5 = self.layer4(feat4)
+
         return [feat1, feat2, feat3, feat4, feat5]
 
 
@@ -221,8 +222,8 @@ def resnet50(pretrained=False, **kwargs):
             strict=False,
         )
 
-    del model.avgpool
-    del model.fc
+    # del model.avgpool
+    # del model.fc
     return model
 
 
@@ -378,7 +379,7 @@ def resnet34(pretrained=False, **kwargs):
 
 
 class ResNet18(nn.Module):
-    def __init__(self, block, layers, num_classes=128):
+    def __init__(self, block, layers, num_classes=256):
         # -----------------------------------------------------------#
         #   假设输入图像为600,600,3
         #   当我们使用resnet50的时候
@@ -403,6 +404,7 @@ class ResNet18(nn.Module):
         self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
 
         self.avgpool = nn.AvgPool2d(7)
+        self.avgpool2 = nn.AvgPool2d(2)
         self.fc = nn.Linear(512 * block.expansion, num_classes)
 
         for m in self.modules():
@@ -436,20 +438,7 @@ class ResNet18(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x):
-        # x = self.conv1(x)
-        # x = self.bn1(x)
-        # x = self.relu(x)
-        # x = self.maxpool(x)
-
-        # x = self.layer1(x)
-        # x = self.layer2(x)
-        # x = self.layer3(x)
-        # x = self.layer4(x)
-
-        # x = self.avgpool(x)
-        # x = x.view(x.size(0), -1)
-        # x = self.fc(x)
-
+        x = x["images"]
         x = self.conv1(x)
         x = self.bn1(x)
         feat1 = self.relu(x)
@@ -462,9 +451,11 @@ class ResNet18(nn.Module):
         feat5 = self.layer4(feat4)
 
         x = self.avgpool(feat5)
+        x = self.avgpool2(x)
         x = x.view(x.size(0), -1)
         x = self.fc(x)
-        return [feat1, feat2, feat3, feat4, feat5, x]
+        # return [feat1, feat2, feat3, feat4, feat5, x]
+        return x
 
 
 def resnet18(pretrained=False, **kwargs):
