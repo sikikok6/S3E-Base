@@ -342,11 +342,42 @@ class BatchSampler(Sampler):
             self.batch_idx.append(ndx)
         self.batch_idx = split_batch(self.batch_idx, self.batch_size)
 
+def vdot(v1, v2):
+    """
+    Dot product along the dim=1
+    :param v1: N x d
+    :param v2: N x d
+    :return: N x 1
+    """
+    out = torch.mul(v1, v2)
+    out = torch.sum(out, 1)
+    return out
+
+class QuaternionLoss(nn.Module):
+    """
+    Implements distance between quaternions as mentioned in
+    D. Huynh. Metrics for 3D rotations: Comparison and analysis
+    """
+
+    def __init__(self):
+        super(QuaternionLoss, self).__init__()
+
+    def forward(self, q1, q2):
+        """
+        :param q1: N x 4
+        :param q2: N x 4
+        :return:
+        """
+        loss = 1 - torch.pow(vdot(q1, q2), 2)
+        loss = torch.mean(loss)
+        return loss
+
 
 class PoseLoss(nn.Module):
     def __init__(self, sx=0.0, sq=0.0, learn_beta=False):
         super(PoseLoss, self).__init__()
         self.learn_beta = learn_beta
+        self.quaternionLoss = QuaternionLoss()
 
         if not self.learn_beta:
             self.sx = 0.0
@@ -359,7 +390,8 @@ class PoseLoss(nn.Module):
     def forward(self, pred_x, pred_q, target_x, target_q):
         # pred_q = F.normalize(pred_q, p=2, dim=1)
         loss_x = F.l1_loss(pred_x, target_x)
-        loss_q = F.l1_loss(pred_q, target_q)
+        # loss_q = F.l1_loss(pred_q, target_q)
+        loss_q = self.quaternionLoss(pred_q, target_q)
 
         loss = (
             torch.exp(-self.sx) * loss_x
@@ -479,7 +511,7 @@ def make_smoothap_collate_fn(
         valid_mask = torch.sum(torch.tensor(positives_masks), -1) != 1
         if val == "val":
             valid_mask = torch.ones(valid_mask.shape, dtype=torch.bool)
-        valid_mask = torch.ones(valid_mask.shape, dtype=torch.bool)
+        # valid_mask = torch.ones(valid_mask.shape, dtype=torch.bool)
 
         positives_masks = torch.tensor(positives_masks)[valid_mask]
         negatives_masks = torch.tensor(negatives_masks)[valid_mask]
@@ -524,8 +556,8 @@ def make_dataloader(params, project_params):
     database_embeddings = test_embeddings[:database_len]
     query_embeddings = test_embeddings[database_len:]
 
-    train_embeddings = train_poses[:, :3]
-    database_embeddings = test_poses[:database_len, :3]
+    # train_embeddings = train_poses[:, :3]
+    # database_embeddings = test_poses[:database_len, :3]
 
     global train_sim_mat
     global database_sim_mat
