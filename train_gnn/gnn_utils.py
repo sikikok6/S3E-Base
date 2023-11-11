@@ -92,8 +92,6 @@ def load_minkLoc_model(
 
     mink_model = model_factory(params)
 
-    """
-
     if pcl_weights is not None:
         assert os.path.exists(pcl_weights), "Cannot open network weights: {}".format(
             pcl_weights
@@ -112,7 +110,6 @@ def load_minkLoc_model(
             torch.load(rgb_weights, map_location=device), strict=False
         )
 
-    """
     return mink_model, params
 
 
@@ -255,8 +252,8 @@ class myGNN(nn.Module):
         A_feat = self.conv_feat_1(g_fc, x, e)
         A_feat = self.conv_feat_2(g_fc, A_feat, e).view((batch_size, 21, -1))
 
-        x_pose = self.mlp3(x_pose.view((-1, 7)))
-        A_pose = self.conv_pos_1(g_fc, x_pose, e)
+        x_pose_fe = self.mlp3(x_pose.view((-1, 7)))
+        A_pose = self.conv_pos_1(g_fc, x_pose_fe, e)
         A_pose = self.conv_pos_2(g_fc, A_pose, e).view((batch_size, 21, -1))
 
         x = self.Encoder(torch.cat((A_feat, A_pose), dim=2).view((-1, 1024)))
@@ -277,8 +274,10 @@ class myGNN(nn.Module):
             deltaPose = g.edata["pose"]
 
         # q2r = self.pose_multipy(est_pose[:, 0], deltaPose.view((batch_size, 20, -1)))
+
         q2r = self.pose_multipy(
-            torch.cat((pos_out, ori_out), dim=2)[:, 0],
+            # torch.cat((pos_out, ori_out), dim=2)[:, 0],
+            x_pose[:, 0],
             deltaPose.view((batch_size, 20, -1)),
         )
 

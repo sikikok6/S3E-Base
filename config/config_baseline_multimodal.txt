@@ -1,8 +1,8 @@
 # Config for training a multi-modal model with point clouds and RGB images on Baseline dataset (RobotCar)
 [DEFAULT]
 num_points = 4096
-use_cloud = False
-use_rgb = True
+use_cloud = True
+use_rgb = False
 
 dataset_folder = /home/david/datasets/fire/
 image_path = /home/david/datasets/fire/color

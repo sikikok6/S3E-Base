@@ -208,10 +208,10 @@ smoothap = SmoothAP()
 d = {"loss": loss}
 
 
-embs = np.load("./gnn_pre_train_embeddings.npy")
+embs = np.load("./gnn_resnet_train_embeddings.npy")
 pose_embs = get_poses("train", project_args)
 
-test_embs = np.load("./gnn_pre_test_embeddings.npy")
+test_embs = np.load("./gnn_resnet_test_embeddings.npy")
 test_pose_embs = get_poses("test", project_args)
 print(len(test_embs))
 database_len = len(test_embs) // 2 if len(test_embs) < 4000 else 3000
@@ -407,7 +407,7 @@ with tqdm.tqdm(range(200), position=0, desc="epoch", ncols=60) as tbar:
                     train_loss_pos_ori = loss_pose
 
                     batch_loss = alpha * train_loss_mse1 + gamma * (
-                        loss_pose
+                        loss_pose_q2r
                         # loss_pose + loss_pose_q2r
                     )
                     pred_pose = np.hstack(
@@ -427,8 +427,11 @@ with tqdm.tqdm(range(200), position=0, desc="epoch", ncols=60) as tbar:
                     )
 
                     trans_error, rot_error = cal_trans_rot_error(
-                        pred_pose, gt_pose.detach().cpu().numpy()
+                        # pred_pose, gt_pose.detach().cpu().numpy()
+                        pred_q2r_pose,
+                        true_q2r_pose,
                     )
+                    # )
                     # pred_q2r_pose, true_q2r_pose)
 
                     trans_loss += trans_error
