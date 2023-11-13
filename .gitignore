@@ -143,5 +143,6 @@ weights/
 *.npy
 *.mat
 *.pickle
+*.pth
 
 tf_logs/
