@@ -379,7 +379,7 @@ def resnet34(pretrained=False, **kwargs):
 
 
 class ResNet18(nn.Module):
-    def __init__(self, block, layers, num_classes=256):
+    def __init__(self, block, layers, num_classes=1000):
         # -----------------------------------------------------------#
         #   假设输入图像为600,600,3
         #   当我们使用resnet50的时候
@@ -454,11 +454,11 @@ class ResNet18(nn.Module):
         x = self.avgpool2(x)
         x = x.view(x.size(0), -1)
         x = self.fc(x)
-        # return [feat1, feat2, feat3, feat4, feat5, x]
-        return x
+        return [feat1, feat2, feat3, feat4, feat5, x]
+        # return x
 
 
-def resnet18(pretrained=False, **kwargs):
+def resnet18(pretrained=True, **kwargs):
     model = ResNet18(BasicBlock, [2, 2, 2, 2], **kwargs)
     if pretrained:
         model.load_state_dict(

@@ -1,7 +1,72 @@
 import torch
 import torch.nn as nn
 import numpy as np
+import torch.nn.functional as F
 from pytorch_metric_learning import losses, distances
+
+
+def vdot(v1, v2):
+    """
+    Dot product along the dim=1
+    :param v1: N x d
+    :param v2: N x d
+    :return: N x 1
+    """
+    out = torch.mul(v1, v2)
+    out = torch.sum(out, 1)
+    return out
+
+
+class QuaternionLoss(nn.Module):
+    """
+    Implements distance between quaternions as mentioned in
+    D. Huynh. Metrics for 3D rotations: Comparison and analysis
+    """
+
+    def __init__(self):
+        super(QuaternionLoss, self).__init__()
+
+    def forward(self, q1, q2):
+        """
+        :param q1: N x 4
+        :param q2: N x 4
+        :return:
+        """
+        loss = 1 - torch.pow(vdot(q1, q2), 2)
+        loss = torch.mean(loss)
+        return loss
+
+
+class PoseLoss(nn.Module):
+    def __init__(self, sx=0.0, sq=0.0, learn_beta=False):
+        super(PoseLoss, self).__init__()
+        self.learn_beta = learn_beta
+        self.quaternionLoss = QuaternionLoss()
+
+        if not self.learn_beta:
+            self.sx = 0.0
+            self.sq = -6.25
+
+        self.sx = nn.Parameter(torch.Tensor([sx]), requires_grad=self.learn_beta)
+        self.sq = nn.Parameter(torch.Tensor([sq]), requires_grad=self.learn_beta)
+        self.loss_print = None
+
+    def forward(self, pred_x, pred_q, target_x, target_q):
+        # pred_q = F.normalize(pred_q, p=2, dim=1)
+        loss_x = F.l1_loss(pred_x, target_x)
+        # loss_q = F.l1_loss(pred_q, target_q)
+        loss_q = self.quaternionLoss(pred_q, target_q)
+
+        loss = (
+            torch.exp(-self.sx) * loss_x
+            + self.sx
+            + torch.exp(-self.sq) * loss_q
+            + self.sq
+        )
+
+        self.loss_print = [loss.item(), loss_x.item(), loss_q.item()]
+
+        return loss, loss_x.item(), loss_q.item()
 
 
 class C2F(torch.nn.Module):
@@ -54,9 +119,9 @@ class C2F(torch.nn.Module):
         exp_sum = smk_exp_sum + hp_sim_exp_sum
 
         query_Sn = hp_sim_exp / exp_sum
-        hn_Sn = smk_exp / \
-            exp_sum.repeat_interleave(len(hn_ind)).view(
-                (len(hp_ind), len(hn_ind)))
+        hn_Sn = smk_exp / exp_sum.repeat_interleave(len(hn_ind)).view(
+            (len(hp_ind), len(hn_ind))
+        )
 
         Sn = torch.concat((query_Sn.unsqueeze(1), hn_Sn), 1)
         hn_iou = iou_[hard_neg_mask]
@@ -64,15 +129,16 @@ class C2F(torch.nn.Module):
 
         return -torch.sum(Sn * torch.log(hn_iou / torch.sum(hn_iou)))
 
-    def forward(self, sim_mat, database_sim_mat, pos_mask, hard_pos_mask, neg_mask, iou):
-        res = self.fine(sim_mat, database_sim_mat,
-                        pos_mask, hard_pos_mask, iou)
+    def forward(
+        self, sim_mat, database_sim_mat, pos_mask, hard_pos_mask, neg_mask, iou
+    ):
+        res = self.fine(sim_mat, database_sim_mat, pos_mask, hard_pos_mask, iou)
         return res
         # return self.coarse(sim_mat, pos_mask, neg_mask, iou)
 
 
 def sigmoid(tensor, temp=1.0):
-    """ temperature controlled sigmoid
+    """temperature controlled sigmoid
     takes as input a torch tensor (tensor) and passes it through a sigmoid, controlled by temperature: temp
     """
     exponent = -tensor / temp
@@ -86,7 +152,11 @@ def sigmoid_t(tensor, temp=0.01):
     tensor_one = tensor * (tensor < 0)
     tensor_two = tensor * (tensor < 0.05)
     tensor_three = tensor * (tensor >= 0.05)
-    return sigmoid(tensor_one / 0.001) + (sigmoid(tensor_two / 0.001) + 0.5) + (10e3 * (tensor_three - 0.05) + sigmoid(tensor_three / 0.001) + 0.5)
+    return (
+        sigmoid(tensor_one / 0.001)
+        + (sigmoid(tensor_two / 0.001) + 0.5)
+        + (10e3 * (tensor_three - 0.05) + sigmoid(tensor_three / 0.001) + 0.5)
+    )
 
 
 def compute_aff(x):
@@ -134,7 +204,7 @@ class SmoothAP(torch.nn.Module):
         super(SmoothAP, self).__init__()
 
     def forward(self, sim_all, pos_mask_):
-        """Forward pass for all input predictions: preds - (batch_size x feat_dims) """
+        """Forward pass for all input predictions: preds - (batch_size x feat_dims)"""
         """_summary_
 
         Example: pred: [1, 0.9, 0.7, 0.6 0.3, 0.2]
@@ -147,10 +217,10 @@ class SmoothAP(torch.nn.Module):
         """
 
         sim_mask = sim_all
-        pos_mask = pos_mask_[:, 1:].to('cuda')
-        neg_mask = (~pos_mask).to(torch.float).to('cuda')
+        pos_mask = pos_mask_[:, 1:].to("cuda")
+        neg_mask = (~pos_mask).to(torch.float).to("cuda")
         # rel = most_pos[:, 1:].to(torch.float).to('cuda')
-        rel = pos_mask_[:, 1:].to(torch.float).to('cuda')
+        rel = pos_mask_[:, 1:].to(torch.float).to("cuda")
 
         sort_ind = torch.argsort(-sim_mask)
         neg_mask = torch.gather(neg_mask, dim=1, index=sort_ind)
@@ -165,12 +235,14 @@ class SmoothAP(torch.nn.Module):
         # d = sim_mask.squeeze().unsqueeze(0)
         d = sim_mask
         d_repeat = d.repeat_interleave(sim_mask.shape[1], 0).view(
-            sim_mask.shape[0], sim_mask.shape[1], sim_mask.shape[1])
+            sim_mask.shape[0], sim_mask.shape[1], sim_mask.shape[1]
+        )
         D = d_repeat - d_repeat.transpose(1, 2)
         D = sigmoid(D, 0.001)
-        D_ = D * (1 - torch.eye(sim_mask.shape[1])).to('cuda')
+        D_ = D * (1 - torch.eye(sim_mask.shape[1])).to("cuda")
         pos_mask_repeat = pos_mask.repeat_interleave(sim_mask.shape[1], 0).view(
-            sim_mask.shape[0], sim_mask.shape[1], sim_mask.shape[1])
+            sim_mask.shape[0], sim_mask.shape[1], sim_mask.shape[1]
+        )
         D_pos = D_ * pos_mask_repeat
 
         R = 1 + torch.sum(D_, 2)
@@ -185,7 +257,7 @@ class SmoothAP(torch.nn.Module):
 
         return ap
         # sim_mask = sim_all[1:]
-        '''
+        """
 
         sim_mask = sim_all
         pos_mask = pos_mask_[:, 1:].to('cuda')
@@ -219,4 +291,4 @@ class SmoothAP(torch.nn.Module):
         ap = ap + ap_
 
         return ap
-        '''
+        """
