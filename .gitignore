@@ -144,5 +144,6 @@ weights/
 *.mat
 *.pickle
 *.pth
+model_data/
 
 tf_logs/
