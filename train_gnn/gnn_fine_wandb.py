@@ -6,9 +6,7 @@ import torch.nn as nn
 import torch
 import numpy as np
 import tqdm
-from gnn_utils import (
-    cal_trans_rot_error,
-)
+from gnn_utils import cal_trans_rot_error, pose_delta
 
 from gnn_datasets import (
     make_dataloader,
@@ -16,7 +14,6 @@ from gnn_datasets import (
 from gnn_models import myGNN
 from gnn_args import ap_embeddings, gnn_args, gnn_config, resnet_embeddings
 from gnn_data import get_gt, get_embeddings
-
 
 project_args = gnn_args()
 
@@ -34,12 +31,17 @@ mink_model, resnet_model, params = gnn_config(project_args)
 
 
 # load dataloaders
-dataloaders = make_dataloader(params, project_args)
+datasets, dataloaders = make_dataloader(params, project_args)
 
 gt, test_gt = get_gt(project_args)
-embs, test_embs, pose_embs, test_pose_embs, database_embs, query_embs = get_embeddings(
-    project_args
-)
+(
+    embs,
+    test_embs,
+    pose_embs,
+    test_pose_embs,
+    database_embs,
+    query_embs,
+) = get_embeddings(project_args)
 
 
 if params.model_params.model == "MinkLocMultimodal":
@@ -61,13 +63,13 @@ d = {"loss": loss}
 criterion = nn.MSELoss().to("cuda")
 
 criterion_pose = nn.MSELoss().to("cuda")
-pose_loss = PoseLoss(learn_beta=True).to("cuda")
-# pose_loss.eval()
+pose_loss = PoseLoss(learn_beta=False).to("cuda")
+pose_loss.eval()
 
 opt = torch.optim.Adam(
     [
         {"params": model.parameters(), "lr": 0.0001, "weight_decay": 0.001},
-        {"params": criterion_pose.parameters()},
+        # {"params": criterion_pose.parameters()},
     ]
 )
 
@@ -76,7 +78,7 @@ cos = nn.CosineSimilarity(dim=2).cuda()
 
 
 max_ = 0.0
-node_nums = 20
+node_nums = 10
 # labels = range(len(feat))
 with tqdm.tqdm(range(200), position=0, desc="epoch", ncols=60) as tbar:
     for epoch in tbar:
@@ -114,6 +116,10 @@ with tqdm.tqdm(range(200), position=0, desc="epoch", ncols=60) as tbar:
 
             dst = torch.repeat_interleave(node, node_nums + 1)
 
+            valid = src != dst
+            src = src[valid]
+            dst = dst[valid]
+
             g_fc = dgl.graph((src, dst))
             g_fc = g_fc.to("cuda")
 
@@ -122,7 +128,7 @@ with tqdm.tqdm(range(200), position=0, desc="epoch", ncols=60) as tbar:
                 neg_mask,
                 hard_pos_mask,
                 labels,
-                neighbours,
+                images,
                 most_pos_mask,
                 batch,
             ) in tbar2:
@@ -140,147 +146,79 @@ with tqdm.tqdm(range(200), position=0, desc="epoch", ncols=60) as tbar:
                     #     model.freeze_except_decoder()
                     ind = labels.clone().detach()
 
-                    """Key Here To Change Poses For Query"""
-                    ind_pose = labels.clone().detach()
-                    ind_pose[:, 0] = ind_pose[:, 1]
-                    pose_embeddings = pose_embs[ind_pose[:, : node_nums + 1]]
-
-                    trans_noise = (
-                        torch.randn(
-                            (pose_embeddings.shape[0], pose_embeddings.shape[1], 3)
-                        )
-                        .cuda()
-                        .detach()
-                    )
-                    rot_noise = (
-                        torch.randn(
-                            (pose_embeddings.shape[0], pose_embeddings.shape[1], 4)
-                        )
-                        .cuda()
-                        .detach()
-                    )
-                    pose_noise = torch.cat((trans_noise, rot_noise), dim=2)
-                    pose_embeddings += pose_noise / 10
-
                     indx = ind[..., dst]
                     indy = ind[..., src]
 
-                    embeddings = embs[ind]
-                    gt_iou = gt[indx, indy].view((-1, 1))
-
-                    A, e, pos_pred, ori_pred, q2r = model(
-                        g_fc_batch, g_batch, embeddings, pose_embeddings
+                    A, deltaPose = model(
+                        g_fc_batch, g_batch, images.view((-1, 3, 240, 320)).cuda()
                     )
 
                     query_embeddings = torch.repeat_interleave(
                         A[:, 0], node_nums, 0
                     ).view((len(pos_mask), node_nums, -1))
 
-                    database_embeddings = A[:, 1 : node_nums + 1]
-
-                    sim_mat = cos(query_embeddings, database_embeddings)
-
-                    loss_affinity_1 = criterion(e, gt_iou.cuda())
-
-                    # print(pos_mask.shape)
-                    # hard_sim_mat = sim_mat[pos_mask[:, 1:]]
-                    # print(hard_sim_mat.shape)
-                    # hard_pos_mask[:, 0] = True
-                    # hard_p_mask = hard_pos_mask[pos_mask].unsqueeze(0)
-
-                    # ap_coarse = smoothap(sim_mat, pos_mask)
-
-                    # ap_fine = smoothap(hard_sim_mat, hard_p_mask)
-
                     # calculate poss loss
-                    gt_pose = pose_embs[ind[:, :]].view((-1, 7))
-                    pos_true = gt_pose[:, :3]
-                    ori_true = gt_pose[:, 3:]
+                    gt_pose = pose_embs[ind[:, :]].view((-1, 6))
 
-                    pos_q2r = q2r.view((-1, 7))[:, :3]
-                    ori_q2r = F.normalize(q2r.view((-1, 7))[:, 3:], p=2, dim=1)
+                    gt_neighbour_pose = pose_embs[indy]
+                    gt_query_pose = pose_embs[indx]
 
-                    repeat_pose = (
-                        pose_embs[ind[:, :]][:, 0]
-                        .unsqueeze(1)
-                        .repeat(1, 20, 1)
-                        .view((-1, 7))
+                    gt_delta_pose = pose_delta(gt_neighbour_pose, gt_query_pose).view(
+                        (-1, 6)
                     )
-                    pos_q2r_true = repeat_pose[:, :3]
-                    ori_q2r_true = repeat_pose[:, 3:]
-                    # pos_q2r_true = (
-                    #     pose_embs[ind[:, :]][:, 1:, :].contiguous().view((-1, 7))[:, :3]
-                    # )
-                    # ori_q2r_true = (
-                    #     pose_embs[ind[:, :]][:, 1:, :].contiguous().view((-1, 7))[:, 3:]
-                    # )
+                    gt_delta_pose_trans = gt_delta_pose[:, :3]
+                    gt_delta_pose_ori = gt_delta_pose[:, 3:]
 
-                    ori_pred = F.normalize(ori_pred, p=2, dim=1)
-                    ori_true = F.normalize(ori_true, p=2, dim=1)
-                    ori_q2r_true = F.normalize(ori_q2r_true, p=2, dim=1)
+                    deltaPose_trans = deltaPose[:, :3]
+                    deltaPose_ori = deltaPose[:, 3:]
 
-                    loss_pose, loss_pos, loss_ori = pose_loss(
-                        pos_pred, ori_pred, pos_true, ori_true
+                    loss_pose_delta, loss_pos, loss_ori = pose_loss(
+                        deltaPose_trans,
+                        deltaPose_ori,
+                        gt_delta_pose_trans,
+                        gt_delta_pose_ori,
                     )
 
-                    loss_pose_q2r, loss_pos_q2r, loss_ori_q2r = pose_loss(
-                        pos_q2r, ori_q2r, pos_q2r_true, ori_q2r_true
+                    gt_neighbour_pose = pose_embs[ind[:, 1:]]
+                    gt_query_pose = pose_embs[ind[:, 0]].unsqueeze(1).repeat((1, 10, 1))
+
+                    gt_delta_pose = pose_delta(gt_neighbour_pose, gt_query_pose).view(
+                        (-1, 6)
                     )
 
-                    # alpha for mse1
-                    alpha = 2
-                    # beta for ori
-                    beta = 1
-                    # gamma for pos and ori
-                    gamma = 2
+                    deltaPose = (
+                        deltaPose.view((labels.shape[0], -1, deltaPose.shape[-1]))[
+                            :, :10
+                        ]
+                        .contiguous()
+                        .view((-1, 6))
+                    )
+                    # print(deltaPose.shape)
 
-                    # train_loss_ap = 1 - (0.7*ap_coarse + 0.3*ap_fine)
-
-                    # train_loss_ap = (1 - ap_coarse).mean()
-                    # train_loss_mse1 = loss_affinity_1 + train_loss_ap
-                    train_loss_mse1 = loss_affinity_1
                     train_loss_pos = loss_pos
                     # Here have beta
-                    train_loss_ori = beta * loss_ori
-                    # train_loss_pos_ori = train_loss_pos + train_loss_ori
-                    train_loss_pos_ori = loss_pose
+                    train_loss_ori = loss_ori
 
-                    batch_loss = alpha * train_loss_mse1 + gamma * (
-                        loss_pose_q2r
-                        # loss_pose + loss_pose_q2r
-                    )
-                    pred_pose = np.hstack(
-                        (
-                            pos_pred.detach().cpu().numpy(),
-                            ori_pred.detach().cpu().numpy(),
-                        )
-                    )
-                    pred_q2r_pose = np.hstack(
-                        (pos_q2r.detach().cpu().numpy(), ori_q2r.detach().cpu().numpy())
-                    )
-                    true_q2r_pose = np.hstack(
-                        (
-                            pos_q2r_true.detach().cpu().numpy(),
-                            ori_q2r_true.detach().cpu().numpy(),
-                        )
-                    )
+                    # batch_loss = alpha * train_loss_mse1 + gamma * (
+                    batch_loss = loss_pose_delta
+                    # loss_pose + loss_pose_q2r
 
                     trans_error, rot_error = cal_trans_rot_error(
-                        # pred_pose, gt_pose.detach().cpu().numpy()
-                        pred_q2r_pose,
-                        true_q2r_pose,
+                        # pred_pose,
+                        # gt_pose.detach().cpu().numpy()
+                        deltaPose.detach().cpu().numpy(),
+                        gt_delta_pose.detach().cpu().numpy(),
                     )
                     # )
                     # pred_q2r_pose, true_q2r_pose)
 
-                    trans_loss += trans_error
-                    rotation_loss += rot_error
+                    # trans_loss += trans_error
+                    # rotation_loss += rot_error
 
                     # train_loss_dic["ap"].append(train_loss_ap.item())
-                    train_loss_dic["mse1"].append(alpha * train_loss_mse1.item())
+                    # train_loss_dic["mse1"].append(alpha * train_loss_mse1.item())
                     train_loss_dic["pos"].append(train_loss_pos)
                     train_loss_dic["ori"].append(train_loss_ori)
-                    train_loss_dic["pos_ori"].append(gamma * train_loss_pos_ori.item())
                     train_loss_dic["train_tran_error"].append(trans_error)
                     train_loss_dic["train_ori_error"].append(rot_error)
 
@@ -349,6 +287,9 @@ with tqdm.tqdm(range(200), position=0, desc="epoch", ncols=60) as tbar:
                 )
 
                 dst = torch.repeat_interleave(node, node_nums + 1)
+                valid = src != dst
+                src = src[valid]
+                dst = dst[valid]
 
                 g_fc = dgl.graph((src, dst))
                 g_fc = g_fc.to("cuda")
@@ -360,7 +301,7 @@ with tqdm.tqdm(range(200), position=0, desc="epoch", ncols=60) as tbar:
                         neg_mask,
                         hard_pos_mask,
                         labels,
-                        neighbours,
+                        images,
                         most_pos_mask,
                         batch,
                     ) in tbar3:
@@ -376,124 +317,33 @@ with tqdm.tqdm(range(200), position=0, desc="epoch", ncols=60) as tbar:
                         ind = labels.clone().detach()
                         # ind = labels
 
-                        embeddings = torch.cat(
-                            (
-                                database_embs[ind[:, 0]].unsqueeze(1),
-                                database_embs[ind[:, 1 : node_nums + 1]],
-                            ),
-                            dim=1,
+                        A, deltaPose = model(
+                            g_fc_batch, g_batch, images.view((-1, 3, 240, 320)).cuda()
                         )
-                        # ind_pose = ind.copy()
-                        ind_pose = labels.clone().detach()
-                        ind_pose[:, 0] = ind_pose[:, 1]
-                        test_pose_embeddings = test_pose_embs[
-                            ind_pose[:, : node_nums + 1]
-                        ]
-                        trans_noise = (
-                            torch.randn(
-                                (
-                                    test_pose_embeddings.shape[0],
-                                    test_pose_embeddings.shape[1],
-                                    3,
-                                )
-                            )
-                            .cuda()
-                            .detach()
-                        )
-                        rot_noise = (
-                            torch.randn(
-                                (
-                                    test_pose_embeddings.shape[0],
-                                    test_pose_embeddings.shape[1],
-                                    4,
-                                )
-                            )
-                            .cuda()
-                            .detach()
-                        )
-                        pose_noise = torch.cat((trans_noise, rot_noise), dim=2)
-                        test_pose_embeddings += pose_noise / 10
-
-                        A, e, test_pos_pred, test_ori_pred, q2r = model(
-                            g_fc_batch, g_batch, embeddings, test_pose_embeddings
-                        )
-
-                        pos_q2r = q2r.view((-1, 7))[:, :3]
-                        ori_q2r = F.normalize(q2r.view((-1, 7))[:, 3:], p=2, dim=1)
-
-                        repeat_pose = (
-                            test_pose_embs[ind[:, :]][:, 0]
-                            .unsqueeze(1)
-                            .repeat(1, 20, 1)
-                            .view((-1, 7))
-                        )
-                        pos_q2r_true = repeat_pose[:, :3]
-                        ori_q2r_true = repeat_pose[:, 3:]
 
                         """Pose Loss Cal"""
-                        # test_gt_pose = pose_embs[ind[:, :]]
-                        # test_gt_pose[:, 0] = test_pose_embs[ind[:, 0]]
-                        # test_gt_pose = test_gt_pose.view((-1, 7))
 
-                        test_gt_pose = test_pose_embs[ind[:, 0]]
                         # calculate poss loss
-
-                        test_pos_true = test_gt_pose[:, :3]
-                        test_ori_true = test_gt_pose[:, 3:]
-
-                        test_ori_pred = F.normalize(
-                            test_ori_pred.view(
-                                (
-                                    test_pose_embeddings.shape[0],
-                                    test_pose_embeddings.shape[1],
-                                    4,
-                                )
-                            )[:, 0],
-                            p=2,
-                            dim=1,
+                        test_gt_neighbour_pose = pose_embs[ind[:, 1:]]
+                        test_gt_query_pose = (
+                            test_pose_embs[ind[:, 0]].unsqueeze(1).repeat((1, 10, 1))
                         )
-                        test_ori_true = F.normalize(test_ori_true, p=2, dim=1)
+                        gt_delta_pose = pose_delta(
+                            test_gt_neighbour_pose, test_gt_query_pose
+                        ).view((-1, 6))
 
-                        test_pos_pred = test_pos_pred.view(
-                            (
-                                test_pose_embeddings.shape[0],
-                                test_pose_embeddings.shape[1],
-                                3,
-                            )
-                        )[:, 0]
-
-                        loss_pose, loss_pos, loss_ori = pose_loss(
-                            test_pos_pred, test_ori_pred, test_pos_true, test_ori_true
-                        )
-
-                        # test_pos_pred, test_ori_pred
-
-                        pred_q2r_pose = np.hstack(
-                            (
-                                pos_q2r.detach().cpu().numpy(),
-                                ori_q2r.detach().cpu().numpy(),
-                            )
-                        )
-                        true_q2r_pose = np.hstack(
-                            (
-                                pos_q2r_true.detach().cpu().numpy(),
-                                ori_q2r_true.detach().cpu().numpy(),
-                            )
+                        deltaPose = (
+                            deltaPose.view((labels.shape[0], -1, deltaPose.shape[-1]))[
+                                :, :10
+                            ]
+                            .contiguous()
+                            .view((-1, 6))
                         )
 
                         trans_error, rot_error = cal_trans_rot_error(
-                            # pred_pose, gt_pose.detach().cpu().numpy()
-                            pred_q2r_pose,
-                            true_q2r_pose,
+                            deltaPose.detach().cpu().numpy(),
+                            gt_delta_pose.detach().cpu().numpy(),
                         )
-
-                        # test_pred_pose = np.hstack(
-                        #     (test_pos_pred.cpu().numpy(), test_ori_pred.cpu().numpy())
-                        # )
-                        #
-                        # trans_error, rot_error = cal_trans_rot_error(
-                        #     test_pred_pose, test_gt_pose.cpu().numpy()
-                        # )
 
                         trans_loss += trans_error
                         rotation_loss += rot_error

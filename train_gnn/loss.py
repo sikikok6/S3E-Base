@@ -54,8 +54,8 @@ class PoseLoss(nn.Module):
     def forward(self, pred_x, pred_q, target_x, target_q):
         # pred_q = F.normalize(pred_q, p=2, dim=1)
         loss_x = F.l1_loss(pred_x, target_x)
-        # loss_q = F.l1_loss(pred_q, target_q)
-        loss_q = self.quaternionLoss(pred_q, target_q)
+        loss_q = F.l1_loss(pred_q, target_q)
+        # loss_q = self.quaternionLoss(pred_q, target_q)
 
         loss = (
             torch.exp(-self.sx) * loss_x

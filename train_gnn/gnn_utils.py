@@ -13,6 +13,7 @@ from torch import autograd
 from scipy.spatial.transform import Rotation as R
 from models.resnetrgb import resnet18
 from datasets.augmentation import ValRGBTransform
+import pytorch3d.transforms as p3dtrans
 
 
 def calc_gradient_penalty(loss_module, embeddings, e, gt_iou, mask):
@@ -235,6 +236,18 @@ def process_poses(poses_in):
     return poses_out
 
 
+def process_poses_eular(poses_in):
+    """
+    poses_in: 4x4
+    poses_out: 0x6
+    """
+    poses_out = np.zeros((6))
+    poses_out[0:3] = poses_in[:3, -1]
+    q = R.from_matrix(poses_in[:3, :3]).as_euler("zxy")
+    poses_out[3:] = q
+    return poses_out
+
+
 def inverse_poses(poses_in):
     """
     poses_in: 0x7
@@ -249,6 +262,36 @@ def inverse_poses(poses_in):
     poses_out[:3, :3] = R_matrix
 
     return poses_out
+
+
+def pose_delta(query_pose, target_pose):
+    index_query = torch.tensor(
+        [
+            [[3, 0, 1, 2] for _ in range(query_pose.shape[1])]
+            for _ in range(query_pose.shape[0])
+        ]
+    ).cuda()
+
+    re_index = torch.tensor(
+        [
+            [[1, 2, 3, 0] for _ in range(query_pose.shape[1])]
+            for _ in range(query_pose.shape[0])
+        ]
+    ).cuda()
+    query_pos = query_pose[:, :, :3]
+    query_rot = query_pose[:, :, 3:]
+    delta_pos = query_pos - target_pose[:, :, :3]
+    delta_rot = query_rot - target_pose[:, :, 3:]
+
+    # delta_rot = p3dtrans.quaternion_multiply(
+    #     F.normalize(query_rot, p=2, dim=2).gather(2, index_query),
+    #     F.normalize(
+    #         p3dtrans.quaternion_invert(target_pose[:, :, 3:]), p=2, dim=2
+    #     ).gather(2, index_query),
+    # )
+    # return torch.cat((delta_pos, delta_rot.gather(2, re_index)), dim=2)
+
+    return torch.cat((delta_pos, delta_rot), dim=2)
 
 
 def get_poses(scene, project_params):
@@ -268,7 +311,7 @@ def get_poses(scene, project_params):
             os.path.join(file_pose_path, file_pose[max(elem_ndx, 0)])
         )
         # trans pose to 3 + 4
-        embeddings_pose = process_poses(embeddings_pose)
+        embeddings_pose = process_poses_eular(embeddings_pose)
 
         # pose
         embeddings_pose_l.append(embeddings_pose)
@@ -327,10 +370,12 @@ def cal_trans_rot_error(pred_pose, gt_pose):
     gt_translation = gt_pose[:, :3]
 
     pred_R_arr = [
-        R.from_quat(pred_pose[i, 3:]).as_matrix() for i in range(len(pred_translation))
+        R.from_euler("zxy", pred_pose[i, 3:]).as_matrix()
+        for i in range(len(pred_translation))
     ]
     gt_R_arr = [
-        R.from_quat(gt_pose[i, 3:]).as_matrix() for i in range(len(pred_translation))
+        R.from_euler("zxy", gt_pose[i, 3:]).as_matrix()
+        for i in range(len(pred_translation))
     ]
 
     cal_R_arr = [pred_R_arr[i].T @ gt_R_arr[i] for i in range(len(pred_R_arr))]

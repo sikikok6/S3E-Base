@@ -38,55 +38,51 @@ class myGNN(nn.Module):
     def __init__(self, in_feats, h_feats, out_feats):
         super(myGNN, self).__init__()
 
-        self.MLP = MLP(256, 1)
-        # self.BN = nn.BatchNorm1d(2*in_feats)
+        self.MLP = MLP(2048, 1)
         self.conv1 = SAGEConv(2048, 1024, "mean")
         self.conv_pos_1 = SAGEConv(256, 256, "mean")
         self.conv_pos_2 = SAGEConv(256, 512, "mean")
-        self.conv_feat_1 = SAGEConv(256, 256, "mean")
-        self.conv_feat_2 = SAGEConv(256, 512, "mean")
+        self.conv_feat_1 = SAGEConv(2048, 2048, "mean")
+        self.conv_feat_2 = SAGEConv(2048, 1024, "mean")
+        # self.resnet = resnet18(True)
+        self.resnet = torch.hub.load(
+            "pytorch/vision:v0.10.0", "resnet18", pretrained=True
+        )
 
         self.mlp2 = nn.Sequential(
-            nn.BatchNorm1d(in_feats),
-            nn.Linear(in_feats, 128),
+            nn.Linear(in_feats, 1024),
             nn.ReLU(),
-            nn.BatchNorm1d(128),
-            nn.Linear(128, 256),
+            nn.Linear(1024, 1024),
             nn.ReLU(),
-            nn.BatchNorm1d(256),
-            nn.Linear(256, 256),
+            nn.Linear(1024, 2048),
             nn.ReLU(),
         )
 
         self.mlp3 = nn.Sequential(
-            nn.BatchNorm1d(7),
             nn.Linear(7, 32),
             nn.ReLU(),
-            nn.BatchNorm1d(32),
             nn.Linear(32, 128),
             nn.ReLU(),
-            nn.BatchNorm1d(128),
             nn.Linear(128, 256),
             nn.ReLU(),
         )
 
-        self.Encoder = nn.Sequential(
-            nn.BatchNorm1d(1024), nn.Linear(1024, 2048), nn.ReLU()
-        )
+        self.Encoder = nn.Sequential(nn.Linear(1024, 2048), nn.ReLU())
 
         self.TransDecoder = nn.Sequential(
-            nn.BatchNorm1d(1024),
             nn.Linear(1024, 3)
             # nn.Tanh()
         )
 
         self.OriDecoder = nn.Sequential(
-            nn.BatchNorm1d(1024),
             nn.Linear(1024, 4)
             # nn.Tanh()
         )
 
         self.EdgePose = nn.Sequential(nn.Linear(2048, 7))
+        self.EdgeTransDecoder = nn.Sequential(nn.Linear(2048, 3))
+
+        self.EdgeOriDecoder = nn.Sequential(nn.Linear(2048, 3))
 
     def edge_score(self, edges):
         h_u = edges.src["x"]
@@ -98,8 +94,9 @@ class myGNN(nn.Module):
     def edge_pose(self, edges):
         h_u = edges.src["x"]
         h_v = edges.dst["x"]
-        pose = self.EdgePose(torch.cat((h_u, h_v), dim=1))
-        return {"pose": pose}
+        trans = self.EdgeTransDecoder(torch.cat((h_u, h_v), dim=1))
+        ori = self.EdgeOriDecoder(torch.cat((h_u, h_v), dim=1))
+        return {"pose": torch.cat((trans, ori), dim=1)}
 
     def pose_multipy(self, ori_pose, delta_pose):
         index_delta = torch.tensor(
@@ -131,45 +128,45 @@ class myGNN(nn.Module):
             if "Decoder" not in name or "EdgePose" not in name:
                 param.requires_grad = False
 
-    def forward(self, g_fc, g, x, x_pose):
-        batch_size = len(x)
+    def forward(self, g_fc, g, x):
+        x = self.resnet(x)
+        batch_size = len(x) // 11
         x = self.mlp2(x.view((-1, 1000)))
-        with g_fc.local_scope():
-            g_fc.ndata["x"] = x
-            g_fc.apply_edges(self.edge_score)
-            e = g_fc.edata["score"]
+        # with g_fc.local_scope():
+        #     g_fc.ndata["x"] = x
+        #     g_fc.apply_edges(self.edge_score)
+        #     e = g_fc.edata["score"]
 
-        A_feat = self.conv_feat_1(g_fc, x, e)
-        A_feat = self.conv_feat_2(g_fc, A_feat, e).view((batch_size, 21, -1))
+        A_feat = self.conv_feat_1(g_fc, x)
+        A_feat = self.conv_feat_2(g_fc, A_feat).view((batch_size, 11, -1))
 
-        x_pose_fe = self.mlp3(x_pose.view((-1, 7)))
-        A_pose = self.conv_pos_1(g_fc, x_pose_fe, e)
-        A_pose = self.conv_pos_2(g_fc, A_pose, e).view((batch_size, 21, -1))
-
-        x = self.Encoder(torch.cat((A_feat, A_pose), dim=2).view((-1, 1024)))
+        # x = self.Encoder(torch.cat((A_feat, A_pose), dim=2).view((-1, 1024)))
+        # x = self.Encoder(A_feat.view((-1, 1024)))
         # x = self.BN(x)
 
         # e_g = e.view((batch_size, -1, 1))[:, 1:11].reshape((-1, 1))
-        A = self.conv1(g_fc, x, e)
+        # A = self.conv1(g_fc, x)
         # .view((batch_size, 11, -1))
         # A = self.conv1(g, x)
 
         # A = F.leaky_relu(A)
         # est_pose = self.Decoder(A[:, 0]).unsqueeze(1)
-        pos_out = self.TransDecoder(A).view((batch_size, 21, -1))
-        ori_out = self.OriDecoder(A).view((batch_size, 21, -1))
-        with g.local_scope():
-            g.ndata["x"] = A
-            g.apply_edges(self.edge_pose)
-            deltaPose = g.edata["pose"]
+        # pos_out = self.TransDecoder(A).view((batch_size, 11, -1))
+        # ori_out = self.OriDecoder(A).view((batch_size, 11, -1))
+        A = F.dropout(A_feat)
 
-        # q2r = self.pose_multipy(est_pose[:, 0], deltaPose.view((batch_size, 20, -1)))
+        with g_fc.local_scope():
+            g_fc.ndata["x"] = A.view((-1, 1024))
+            g_fc.apply_edges(self.edge_pose)
+            deltaPose = g_fc.edata["pose"]
 
-        q2r = self.pose_multipy(
-            torch.cat((pos_out, ori_out), dim=2)[:, 1:],
-            # x_pose[:, 0],
-            deltaPose.view((batch_size, 20, -1)),
-        )
+        # q2r = self.pose_multipy(est_pose[:, 0], deltaPose.view((batch_size, 10, -1)))
+
+        # q2r = self.pose_multipy(
+        #     torch.cat((pos_out, ori_out), dim=2)[:, 1:],
+        #     # x_pose[:, 0],
+        #     deltaPose.view((batch_size, 10, -1)),
+        # )
 
         # est_pose = A[0, 512:]
 
@@ -178,6 +175,7 @@ class myGNN(nn.Module):
 
         # A = A[:, :512]
 
-        A = F.normalize(A, dim=1).view((batch_size, 21, -1))
+        A = F.normalize(A, dim=1).view((batch_size, 11, -1))
         # pred2, A2 = self.conv2(g, pred)
-        return A, e, pos_out.view((-1, 3)), ori_out.view((-1, 4)), q2r
+        # return A, pos_out.view((-1, 3)), ori_out.view((-1, 4)), deltaPose
+        return A, deltaPose

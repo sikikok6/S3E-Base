@@ -14,6 +14,9 @@ import random
 from typing import Dict
 import torchvision.transforms as transforms
 from scipy.linalg import expm, norm
+
+from datasets.augmentation import ValRGBTransform
+
 DEBUG = False
 
 
@@ -22,26 +25,39 @@ class ScanNetDataset(Dataset):
     Dataset wrapper for Oxford laser scans dataset from PointNetVLAD project.
     """
 
-    def __init__(self, dataset_path: str, query_filename: str, image_path: str = None,
-                 lidar2image_ndx_path: str = None, transform=None, set_transform=None, image_transform=None,
-                 use_cloud: bool = True):
-        assert os.path.exists(
-            dataset_path), 'Cannot access dataset path: {}'.format(dataset_path)
+    def __init__(
+        self,
+        dataset_path: str,
+        query_filename: str,
+        image_path: str = None,
+        lidar2image_ndx_path: str = None,
+        transform=None,
+        set_transform=None,
+        image_transform=None,
+        use_cloud: bool = True,
+    ):
+        assert os.path.exists(dataset_path), "Cannot access dataset path: {}".format(
+            dataset_path
+        )
         self.dataset_path = dataset_path
         self.query_filepath = os.path.join(dataset_path, query_filename)
         assert os.path.exists(
-            self.query_filepath), 'Cannot access query file: {}'.format(self.query_filepath)
+            self.query_filepath
+        ), "Cannot access query file: {}".format(self.query_filepath)
         self.transform = transform
         self.set_transform = set_transform
         self.queries: Dict[int, TrainingTuple] = pickle.load(
-            open(self.query_filepath, 'rb'))
-        self.image_path = os.path.join(self.dataset_path, 'color')
+            open(self.query_filepath, "rb")
+        )
+        self.image_path = os.path.join(self.dataset_path, "color")
         self.lidar2image_ndx_path = lidar2image_ndx_path
         self.image_transform = image_transform
-        self.n_points = 4096    # pointclouds in the dataset are downsampled to 4096 points
-        self.image_ext = '.color.png'
+        self.n_points = (
+            4096  # pointclouds in the dataset are downsampled to 4096 points
+        )
+        self.image_ext = ".color.png"
         self.use_cloud = use_cloud
-        print('{} queries in the dataset'.format(len(self)))
+        print("{} queries in the dataset".format(len(self)))
 
         # assert os.path.exists(self.lidar2image_ndx_path), f"Cannot access lidar2image_ndx: {self.lidar2image_ndx_path}"
         # self.lidar2image_ndx = pickle.load(open(self.lidar2image_ndx_path, 'rb'))
@@ -50,7 +66,8 @@ class ScanNetDataset(Dataset):
             self.lidar2image_ndx[i] = [i]
 
     def __len__(self):
-        if 'test' not in self.query_filepath:
+        return 2000
+        if "test" not in self.query_filepath:
             return len(self.queries)
         else:
             if len(self.queries) >= 4000:
@@ -63,7 +80,7 @@ class ScanNetDataset(Dataset):
         # Load point cloud and apply transform
         filename = self.queries[ndx].rel_scan_filepath
         # print(f"scannetdataset_filename: {filename}")
-        result = {'ndx': ndx}
+        result = {"ndx": ndx}
         # if self.use_cloud:
         #     # Load point cloud and apply transform
         #     file_pathname = os.path.join(self.dataset_path, self.queries[ndx].rel_scan_filepath)
@@ -75,16 +92,20 @@ class ScanNetDataset(Dataset):
         if self.image_path is not None:
             # img = image4lidar(filename, self.image_path,
             #                   self.image_ext, self.lidar2image_ndx, k=None)
-            img = Image.open(os.path.join(
-                self.image_path, filename.split('/')[-1].replace('bin', 'color.png')))
-            if self.image_transform is not None:
-                img = self.image_transform(img)
+            img = Image.open(
+                os.path.join(
+                    self.image_path, filename.split("/")[-1].replace("bin", "color.png")
+                )
+            )
+            # if self.image_transform is not None:
+            transform = ValRGBTransform()
+            img = transform(img)
             # query_img = Image.open(query_filename).convert('RGB')
-            result['image'] = img
+            result["image"] = img
 
         # This result is a dict-type, result = {'ndx': ndx, 'cloud': query_pc, 'image': img}
         # return result
-        return None, ndx
+        return result, ndx
 
     def get_positives(self, ndx):
         return self.queries[ndx].positives
@@ -98,8 +119,9 @@ class ScanNetDataset(Dataset):
         file_path = os.path.join(self.dataset_path, filename)
         pc = np.fromfile(file_path, dtype=np.float64)
         # coords are within -1..1 range in each dimension
-        assert pc.shape[0] == self.n_points * \
-            3, "Error in point cloud shape: {}".format(file_path)
+        assert (
+            pc.shape[0] == self.n_points * 3
+        ), "Error in point cloud shape: {}".format(file_path)
         pc = np.reshape(pc, (pc.shape[0] // 3, 3))
         pc = torch.tensor(pc, dtype=torch.float)
         return pc
@@ -108,7 +130,7 @@ class ScanNetDataset(Dataset):
 def ts_from_filename(filename):
     # Extract timestamp (as integer) from the file path/name
     temp = os.path.split(filename)[1]
-    lidar_ts = os.path.splitext(temp)[0]        # LiDAR timestamp
+    lidar_ts = os.path.splitext(temp)[0]  # LiDAR timestamp
     # assert lidar_ts.isdigit(), 'Incorrect lidar timestamp: {}'.format(lidar_ts)
 
     # temp = os.path.split(filename)[0]
@@ -135,18 +157,29 @@ def image4lidar(filename, image_path, image_ext, lidar2image_ndx, k=None):
     # image_ts = lidar2image_ndx[lidar_ts]
     # print(filename)
     # print(image_path, lidar_ts + image_ext)
-    image_path = '/home/ubuntu-user/S3E-backup/datasetfiles/datasets/fire/color'
+    image_path = "/home/ubuntu-user/S3E-backup/datasetfiles/datasets/fire/color"
     image_file_path = os.path.join(image_path, lidar_ts + image_ext)
     # image_file_path = '/media/sf_Datasets/images4lidar/2014-05-19-13-20-57/1400505893134088.png'
-    img = Image.open(image_file_path).convert('RGB')
+    img = Image.open(image_file_path).convert("RGB")
     # query_img = Image.open(query_filename).convert('RGB')
     return img
 
 
 class TrainingTuple:
     # Tuple describing an element for training/validation
-    def __init__(self, id: int, timestamp: int, rel_scan_filepath: str, positives: np.ndarray,
-                 non_negatives: np.ndarray, pose: np.ndarray, most_positive: np.ndarray, negatives: np.ndarray, hard_positives: np.ndarray, neighbours: np.ndarray):
+    def __init__(
+        self,
+        id: int,
+        timestamp: int,
+        rel_scan_filepath: str,
+        positives: np.ndarray,
+        non_negatives: np.ndarray,
+        pose: np.ndarray,
+        most_positive: np.ndarray,
+        negatives: np.ndarray,
+        hard_positives: np.ndarray,
+        neighbours: np.ndarray,
+    ):
         # id: element id (ids start from 0 and are consecutive numbers)
         # ts: timestamp
         # rel_scan_filepath: relative path to the scan
@@ -165,6 +198,7 @@ class TrainingTuple:
         self.most_positive = most_positive
         self.negatives = negatives
         self.neighbours = neighbours
+
 
 # class TrainingTuple:
 #     # Tuple describing an element for training/validation
@@ -191,11 +225,14 @@ class TrainTransform:
         # 1 is default mode, no transform
         self.aug_mode = aug_mode
         if self.aug_mode == 1:
-            t = [JitterPoints(sigma=0.001, clip=0.002), RemoveRandomPoints(r=(0.0, 0.1)),
-                 RandomTranslation(max_delta=0.01), RemoveRandomBlock(p=0.4)]
+            t = [
+                JitterPoints(sigma=0.001, clip=0.002),
+                RemoveRandomPoints(r=(0.0, 0.1)),
+                RandomTranslation(max_delta=0.01),
+                RemoveRandomBlock(p=0.4),
+            ]
         else:
-            raise NotImplementedError(
-                'Unknown aug_mode: {}'.format(self.aug_mode))
+            raise NotImplementedError("Unknown aug_mode: {}".format(self.aug_mode))
         self.transform = transforms.Compose(t)
 
     def __call__(self, e):
@@ -209,8 +246,10 @@ class TrainSetTransform:
         # 1 is default mode, no transform
         self.aug_mode = aug_mode
         self.transform = None
-        t = [RandomRotation(max_theta=5, max_theta2=0, axis=np.array([0, 0, 1])),
-             RandomFlip([0.25, 0.25, 0.])]
+        t = [
+            RandomRotation(max_theta=5, max_theta2=0, axis=np.array([0, 0, 1])),
+            RandomFlip([0.25, 0.25, 0.0]),
+        ]
         self.transform = transforms.Compose(t)
 
     def __call__(self, e):
@@ -223,8 +262,7 @@ class RandomFlip:
     def __init__(self, p):
         # p = [p_x, p_y, p_z] probability of flipping each axis
         assert len(p) == 3
-        assert 0 < sum(
-            p) <= 1, 'sum(p) must be in (0, 1] range, is: {}'.format(sum(p))
+        assert 0 < sum(p) <= 1, "sum(p) must be in (0, 1] range, is: {}".format(sum(p))
         self.p = p
         self.p_cum_sum = np.cumsum(p)
 
@@ -246,8 +284,8 @@ class RandomFlip:
 class RandomRotation:
     def __init__(self, axis=None, max_theta=180, max_theta2=15):
         self.axis = axis
-        self.max_theta = max_theta      # Rotation around axis
-        self.max_theta2 = max_theta2    # Smaller rotation in random direction
+        self.max_theta = max_theta  # Rotation around axis
+        self.max_theta2 = max_theta2  # Smaller rotation in random direction
 
     def _M(self, axis, theta):
         return expm(np.cross(np.eye(3), axis / norm(axis) * theta)).astype(np.float32)
@@ -257,13 +295,16 @@ class RandomRotation:
             axis = self.axis
         else:
             axis = np.random.rand(3) - 0.5
-        R = self._M(axis, (np.pi * self.max_theta / 180)
-                    * 2 * (np.random.rand(1) - 0.5))
+        R = self._M(
+            axis, (np.pi * self.max_theta / 180) * 2 * (np.random.rand(1) - 0.5)
+        )
         if self.max_theta2 is None:
             coords = coords @ R
         else:
-            R_n = self._M(np.random.rand(
-                3) - 0.5, (np.pi * self.max_theta2 / 180) * 2 * (np.random.rand(1) - 0.5))
+            R_n = self._M(
+                np.random.rand(3) - 0.5,
+                (np.pi * self.max_theta2 / 180) * 2 * (np.random.rand(1) - 0.5),
+            )
             coords = coords @ R @ R_n
 
         return coords
@@ -298,27 +339,28 @@ class RandomShear:
 
 
 class JitterPoints:
-    def __init__(self, sigma=0.01, clip=None, p=1.):
-        assert 0 < p <= 1.
-        assert sigma > 0.
+    def __init__(self, sigma=0.01, clip=None, p=1.0):
+        assert 0 < p <= 1.0
+        assert sigma > 0.0
 
         self.sigma = sigma
         self.clip = clip
         self.p = p
 
     def __call__(self, e):
-        """ Randomly jitter points. jittering is per point.
-            Input:
-              BxNx3 array, original batch of point clouds
-            Return:
-              BxNx3 array, jittered batch of point clouds
+        """Randomly jitter points. jittering is per point.
+        Input:
+          BxNx3 array, original batch of point clouds
+        Return:
+          BxNx3 array, jittered batch of point clouds
         """
 
         sample_shape = (e.shape[0],)
-        if self.p < 1.:
+        if self.p < 1.0:
             # Create a mask for points to jitter
             m = torch.distributions.categorical.Categorical(
-                probs=torch.tensor([1 - self.p, self.p]))
+                probs=torch.tensor([1 - self.p, self.p])
+            )
             mask = m.sample(sample_shape=sample_shape)
         else:
             mask = torch.ones(sample_shape, dtype=torch.int64)
@@ -354,8 +396,9 @@ class RemoveRandomPoints:
             # Randomly select removal ratio
             r = random.uniform(self.r_min, self.r_max)
 
-        mask = np.random.choice(range(n), size=int(
-            n*r), replace=False)   # select elements to remove
+        mask = np.random.choice(
+            range(n), size=int(n * r), replace=False
+        )  # select elements to remove
         e[mask] = torch.zeros_like(e[mask])
         return e
 
@@ -395,7 +438,11 @@ class RemoveRandomBlock:
         if random.random() < self.p:
             # Fronto-parallel cuboid to remove
             x, y, w, h = self.get_params(coords)
-            mask = (x < coords[..., 0]) & (
-                coords[..., 0] < x+w) & (y < coords[..., 1]) & (coords[..., 1] < y+h)
+            mask = (
+                (x < coords[..., 0])
+                & (coords[..., 0] < x + w)
+                & (y < coords[..., 1])
+                & (coords[..., 1] < y + h)
+            )
             coords[mask] = torch.zeros_like(coords[mask])
         return coords

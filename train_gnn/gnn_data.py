@@ -2,7 +2,7 @@ import torch
 import pickle
 import os
 import numpy as np
-from gnn_utils import get_poses
+from gnn_utils import get_poses, pose_delta
 
 
 def get_gt(project_args):
@@ -74,20 +74,24 @@ def get_gt(project_args):
 
 
 def get_embeddings(project_args):
-    embs = np.load("./embeddings/gnn_resnet_train_embeddings.npy")
+    embs = np.load("./embeddings/gnn_pre_train_embeddings.npy")
     pose_embs = get_poses("train", project_args)
 
-    test_embs = np.load("./embeddings/gnn_resnet_test_embeddings.npy")
+    test_embs = np.load("./embeddings/gnn_pre_test_embeddings.npy")
     test_pose_embs = get_poses("test", project_args)
-    print(len(test_embs))
     database_len = len(test_embs) // 2 if len(test_embs) < 4000 else 3000
-    database_embs = torch.tensor(test_embs[:database_len].copy())
-    query_embs = torch.tensor(test_embs[database_len:].copy())
-    database_embs = database_embs.to("cuda")
-    query_embs = query_embs.to("cuda")
+    database_embs = torch.tensor(test_embs.copy())
+    query_embs = torch.tensor(test_embs.copy())
 
-    embs = torch.tensor(embs).to("cuda")
+    embs = torch.tensor(embs)
     # Add Here For Pose
     pose_embs = torch.tensor(pose_embs, dtype=torch.float32).to("cuda")
     test_pose_embs = torch.tensor(test_pose_embs, dtype=torch.float32).to("cuda")
-    return embs, test_embs, pose_embs, test_pose_embs, database_embs, query_embs
+    return (
+        embs,
+        test_embs,
+        pose_embs,
+        test_pose_embs,
+        database_embs,
+        query_embs,
+    )

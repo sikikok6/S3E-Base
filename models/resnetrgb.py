@@ -438,7 +438,7 @@ class ResNet18(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x):
-        x = x["images"]
+        # x = x["images"]
         x = self.conv1(x)
         x = self.bn1(x)
         feat1 = self.relu(x)
@@ -451,11 +451,11 @@ class ResNet18(nn.Module):
         feat5 = self.layer4(feat4)
 
         x = self.avgpool(feat5)
-        x = self.avgpool2(x)
+        # x = self.avgpool2(x)
         x = x.view(x.size(0), -1)
         x = self.fc(x)
-        return [feat1, feat2, feat3, feat4, feat5, x]
-        # return x
+        # return [feat1, feat2, feat3, feat4, feat5, x]
+        return x
 
 
 def resnet18(pretrained=True, **kwargs):

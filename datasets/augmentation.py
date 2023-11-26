@@ -17,10 +17,14 @@ class TrainTransform:
         if self.aug_mode == 0:
             self.transform = None
         elif self.aug_mode == 1:
-            t = [JitterPoints(sigma=0.001, clip=0.002), RemoveRandomPoints(r=(0.0, 0.1)),
-                 RandomTranslation(max_delta=0.01), RemoveRandomBlock(p=0.4)]
+            t = [
+                JitterPoints(sigma=0.001, clip=0.002),
+                RemoveRandomPoints(r=(0.0, 0.1)),
+                RandomTranslation(max_delta=0.01),
+                RemoveRandomBlock(p=0.4),
+            ]
         else:
-            raise NotImplementedError('Unknown aug_mode: {}'.format(self.aug_mode))
+            raise NotImplementedError("Unknown aug_mode: {}".format(self.aug_mode))
         self.transform = transforms.Compose(t)
 
     def __call__(self, e):
@@ -34,15 +38,21 @@ class TrainRGBTransform:
         # 1 is default mode, no transform
         self.aug_mode = aug_mode
         if self.aug_mode == 0:
-            t = [transforms.ToTensor(),
-                 transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])]
+            t = [
+                transforms.ToTensor(),
+                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+            ]
         elif self.aug_mode == 1:
-            t = [transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
-                 transforms.ToTensor(),
-                 transforms.RandomErasing(scale=(0.1, 0.4)),
-                 transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])]
+            t = [
+                transforms.ColorJitter(
+                    brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1
+                ),
+                transforms.ToTensor(),
+                transforms.RandomErasing(scale=(0.1, 0.4)),
+                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+            ]
         else:
-            raise NotImplementedError('Unknown aug_mode: {}'.format(self.aug_mode))
+            raise NotImplementedError("Unknown aug_mode: {}".format(self.aug_mode))
         self.transform = transforms.Compose(t)
 
     def __call__(self, e):
@@ -54,7 +64,10 @@ class TrainRGBTransform:
 class ValRGBTransform:
     def __init__(self):
         # 1 is default mode, no transform
-        t = [transforms.ToTensor(), transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])]
+        t = [
+            transforms.ToTensor(),
+            transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+        ]
         self.transform = transforms.Compose(t)
 
     def __call__(self, e):
@@ -66,7 +79,7 @@ class RandomFlip:
     def __init__(self, p):
         # p = [p_x, p_y, p_z] probability of flipping each axis
         assert len(p) == 3
-        assert 0 < sum(p) <= 1, 'sum(p) must be in (0, 1] range, is: {}'.format(sum(p))
+        assert 0 < sum(p) <= 1, "sum(p) must be in (0, 1] range, is: {}".format(sum(p))
         self.p = p
         self.p_cum_sum = np.cumsum(p)
 
@@ -88,8 +101,8 @@ class RandomFlip:
 class RandomRotation:
     def __init__(self, axis=None, max_theta=180, max_theta2=15):
         self.axis = axis
-        self.max_theta = max_theta      # Rotation around axis
-        self.max_theta2 = max_theta2    # Smaller rotation in random direction
+        self.max_theta = max_theta  # Rotation around axis
+        self.max_theta2 = max_theta2  # Smaller rotation in random direction
 
     def _M(self, axis, theta):
         return expm(np.cross(np.eye(3), axis / norm(axis) * theta)).astype(np.float32)
@@ -99,11 +112,16 @@ class RandomRotation:
             axis = self.axis
         else:
             axis = np.random.rand(3) - 0.5
-        R = self._M(axis, (np.pi * self.max_theta / 180) * 2 * (np.random.rand(1) - 0.5))
+        R = self._M(
+            axis, (np.pi * self.max_theta / 180) * 2 * (np.random.rand(1) - 0.5)
+        )
         if self.max_theta2 is None:
             coords = coords @ R
         else:
-            R_n = self._M(np.random.rand(3) - 0.5, (np.pi * self.max_theta2 / 180) * 2 * (np.random.rand(1) - 0.5))
+            R_n = self._M(
+                np.random.rand(3) - 0.5,
+                (np.pi * self.max_theta2 / 180) * 2 * (np.random.rand(1) - 0.5),
+            )
             coords = coords @ R @ R_n
 
         return coords
@@ -138,29 +156,31 @@ class RandomShear:
 
 
 class JitterPoints:
-    def __init__(self, sigma=0.01, clip=None, p=1.):
-        assert 0 < p <= 1.
-        assert sigma > 0.
+    def __init__(self, sigma=0.01, clip=None, p=1.0):
+        assert 0 < p <= 1.0
+        assert sigma > 0.0
 
         self.sigma = sigma
         self.clip = clip
         self.p = p
 
     def __call__(self, e):
-        """ Randomly jitter points. jittering is per point.
-            Input:
-              BxNx3 array, original batch of point clouds
-            Return:
-              BxNx3 array, jittered batch of point clouds
+        """Randomly jitter points. jittering is per point.
+        Input:
+          BxNx3 array, original batch of point clouds
+        Return:
+          BxNx3 array, jittered batch of point clouds
         """
 
         sample_shape = (e.shape[0],)
-        if self.p < 1.:
+        if self.p < 1.0:
             # Create a mask for points to jitter
-            m = torch.distributions.categorical.Categorical(probs=torch.tensor([1 - self.p, self.p]))
+            m = torch.distributions.categorical.Categorical(
+                probs=torch.tensor([1 - self.p, self.p])
+            )
             mask = m.sample(sample_shape=sample_shape)
         else:
-            mask = torch.ones(sample_shape, dtype=torch.int64 )
+            mask = torch.ones(sample_shape, dtype=torch.int64)
 
         mask = mask == 1
         jitter = self.sigma * torch.randn_like(e[mask])
@@ -193,7 +213,9 @@ class RemoveRandomPoints:
             # Randomly select removal ratio
             r = random.uniform(self.r_min, self.r_max)
 
-        mask = np.random.choice(range(n), size=int(n*r), replace=False)   # select elements to remove
+        mask = np.random.choice(
+            range(n), size=int(n * r), replace=False
+        )  # select elements to remove
         e[mask] = torch.zeros_like(e[mask])
         return e
 
@@ -204,6 +226,7 @@ class RemoveRandomBlock:
     Erases fronto-parallel cuboid.
     Instead of erasing we set coords of removed points to (0, 0, 0) to retain the same number of points
     """
+
     def __init__(self, p=0.5, scale=(0.02, 0.33), ratio=(0.3, 3.3)):
         self.p = p
         self.scale = scale
@@ -229,8 +252,13 @@ class RemoveRandomBlock:
 
     def __call__(self, coords):
         if random.random() < self.p:
-            x, y, w, h = self.get_params(coords)     # Fronto-parallel cuboid to remove
-            mask = (x < coords[..., 0]) & (coords[..., 0] < x+w) & (y < coords[..., 1]) & (coords[..., 1] < y+h)
+            x, y, w, h = self.get_params(coords)  # Fronto-parallel cuboid to remove
+            mask = (
+                (x < coords[..., 0])
+                & (coords[..., 0] < x + w)
+                & (y < coords[..., 1])
+                & (coords[..., 1] < y + h)
+            )
             coords[mask] = torch.zeros_like(coords[mask])
         return coords
 
@@ -242,10 +270,12 @@ class TrainSetTransform:
         if aug_mode == 0:
             t = None
         elif aug_mode == 1:
-            t = [RandomRotation(max_theta=5, max_theta2=0, axis=np.array([0, 0, 1])),
-                 RandomFlip([0.25, 0.25, 0.])]
+            t = [
+                RandomRotation(max_theta=5, max_theta2=0, axis=np.array([0, 0, 1])),
+                RandomFlip([0.25, 0.25, 0.0]),
+            ]
         else:
-            raise NotImplementedError('Unknown aug_mode: {}'.format(aug_mode))
+            raise NotImplementedError("Unknown aug_mode: {}".format(aug_mode))
         if t is None:
             self.transform = None
         else:
@@ -258,7 +288,13 @@ class TrainSetTransform:
 
 
 def tensor2img(x):
-    t = transforms.Compose([transforms.Normalize(mean=[-0.485 / 0.229, -0.456 / 0.224, -0.406 / 0.225],
-                                                 std=[1 / 0.229, 1 / 0.224, 1 / 0.225]),
-                            transforms.ToPILImage()])
+    t = transforms.Compose(
+        [
+            transforms.Normalize(
+                mean=[-0.485 / 0.229, -0.456 / 0.224, -0.406 / 0.225],
+                std=[1 / 0.229, 1 / 0.224, 1 / 0.225],
+            ),
+            transforms.ToPILImage(),
+        ]
+    )
     return t(x)
