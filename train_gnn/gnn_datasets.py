@@ -13,6 +13,8 @@ from gnn_utils import get_poses, in_sorted_array
 train_sim_mat = []
 query_sim_mat = []
 database_sim_mat = []
+train_pose = []
+test_pose = []
 
 
 def split_batch(lst, batch_size):
@@ -67,6 +69,22 @@ class BatchSampler(Sampler):
         self.batch_idx = split_batch(self.batch_idx, self.batch_size)
 
 
+def make_collate_fn():
+    def collate_fn(data_list):
+        images = [e.x.view(8, 3, 256, 341) for e in data_list]
+        edge_index = [e.edge_index for e in data_list]
+        edge_attr = [e.edge_attr for e in data_list]
+        y = [e.y for e in data_list]
+        return (
+            torch.stack(images),
+            torch.stack(edge_index),
+            torch.stack(edge_attr),
+            torch.stack(y),
+        )
+
+    return collate_fn
+
+
 def make_smoothap_collate_fn(
     dataset: ScanNetDataset,
     train_dataset: ScanNetDataset,
@@ -80,45 +98,21 @@ def make_smoothap_collate_fn(
         global train_sim_mat
         global database_sim_mat
         global query_sim_mat
+        global train_pose
+        global test_pose
         num = 10
-        positives_mask = []
-        hard_positives_mask = []
-        negatives_mask = []
-        most_positives_mask = []
-
-        positives_masks = []
-        hard_positives_masks = []
-        negatives_masks = []
-        most_positives_masks = []
         images = []
+        poses = []
 
         labels = [[e[1]] for e in data_list]
-
-        # dataset.queries[labels[0]]
 
         if val != "val":
             for i in range(len(labels)):
                 labels[i].extend(train_sim_mat[labels[i][0]][1 : num + 1])
                 images.append(torch.stack([dataset[e][0]["image"] for e in labels[i]]))
-                positives_mask = [
-                    in_sorted_array(e, dataset.queries[labels[i][0]].positives)
-                    for e in labels[i]
-                ]
-                hard_positives_mask = [
-                    in_sorted_array(e, dataset.queries[labels[i][0]].hard_positives)
-                    for e in labels[i]
-                ]
-                positives_mask[0] = True
-                negatives_mask = [not item for item in positives_mask]
-                positives_masks.append(positives_mask)
-                negatives_masks.append(negatives_mask)
-                hard_positives_masks.append(hard_positives_mask)
-                most_positives_mask = [
-                    in_sorted_array(e, dataset.queries[labels[i][0]].most_positive)
-                    for e in labels[i]
-                ]
-                # most_positives_mask = torch.tensor([most_positives_mask])
-                most_positives_masks.append(most_positives_mask)
+                poses.append(
+                    torch.stack([torch.tensor(train_pose[e]) for e in labels[i]])
+                )
         else:
             for i in range(len(labels)):
                 labels[i].extend(query_sim_mat[labels[i][0]][:num])
@@ -126,43 +120,14 @@ def make_smoothap_collate_fn(
                     torch.stack([train_dataset[e][0]["image"] for e in labels[i]])
                 )
                 images[i][0] = dataset[labels[i][0]][0]["image"]
-                positives_mask = [
-                    in_sorted_array(e, dataset.queries[labels[i][0]].positives)
-                    for e in labels[i]
-                ]
-                positives_mask[0] = True
-                negatives_mask = [not item for item in positives_mask]
-                positives_masks.append(positives_mask)
-                negatives_masks.append(negatives_mask)
-                hard_positives_masks.append(hard_positives_mask)
-                most_positives_mask = [
-                    in_sorted_array(e, dataset.queries[labels[i][0]].most_positive)
-                    for e in labels[i]
-                ]
-                # most_positives_mask = torch.tensor([most_positives_mask])
-                most_positives_masks.append(most_positives_mask)
+                poses.append(
+                    torch.stack([torch.tensor(train_pose[e]) for e in labels[i]])
+                )
+                poses[i][0] = torch.tensor(test_pose[labels[i][0]])
         images = torch.stack(images)
+        poses = torch.stack(poses)
 
-        valid_mask = torch.sum(torch.tensor(positives_masks), -1) != 1
-        if val == "val":
-            valid_mask = torch.ones(valid_mask.shape, dtype=torch.bool)
-        valid_mask = torch.ones(valid_mask.shape, dtype=torch.bool)
-
-        positives_masks = torch.tensor(positives_masks)[valid_mask]
-        negatives_masks = torch.tensor(negatives_masks)[valid_mask]
-        hard_positives_masks = torch.tensor(hard_positives_masks)[valid_mask]
-        labels = torch.tensor(labels)[valid_mask]
-        most_positives_masks = torch.tensor(most_positives_masks)[valid_mask]
-
-        return (
-            positives_masks,
-            negatives_masks,
-            hard_positives_masks,
-            labels,
-            images,
-            most_positives_masks,
-            None,
-        )
+        return (torch.tensor(labels), images, poses)
 
         # return torch.tensor(positives_masks)[valid_mask], torch.tensor(negatives_masks)[valid_mask], torch.tensor(hard_positives_masks)[valid_mask], torch.tensor(labels)[valid_mask], torch.tensor(neighbours)[valid_mask], torch.tensor(most_positives_masks)[valid_mask], None
 
@@ -175,16 +140,21 @@ def make_dataloader(params, project_params):
     train_file = "pickle/" + project_params.scene + "_train_overlap.pickle"
     test_file = "pickle/" + project_params.scene + "_test_overlap.pickle"
 
+    global train_pose, test_pose
     train_transform = TrainTransform(1)
     train_set_transform = TrainSetTransform(1)
 
-    train_poses = get_poses("train", project_params)
-    test_poses = get_poses("test", project_params)
-    np.save("./train_poses.npy", train_poses)
-    np.save("./test_poses.npy", test_poses)
+    train_pose = get_poses("train", project_params)
+    test_pose = get_poses("test", project_params)
+    np.save("./train_poses.npy", train_pose)
+    np.save("./test_poses.npy", test_pose)
 
-    train_embeddings = np.load("./embeddings/gnn_pre_train_embeddings.npy")
-    test_embeddings = np.load("./embeddings/gnn_pre_test_embeddings.npy")
+    train_embeddings = np.load(
+        "/home/david/Code/S3E-Base/train_gnn/embeddings/gnn_resnet_train_embeddings.npy"
+    )
+    test_embeddings = np.load(
+        "/home/david/Code/S3E-Base/train_gnn/embeddings/gnn_resnet_test_embeddings.npy"
+    )
 
     database_len = len(test_embeddings) // 2 if len(test_embeddings) < 4000 else 3000
     # database_embeddings = test_embeddings[:database_len]

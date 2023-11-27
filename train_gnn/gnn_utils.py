@@ -265,24 +265,24 @@ def inverse_poses(poses_in):
 
 
 def pose_delta(query_pose, target_pose):
-    index_query = torch.tensor(
-        [
-            [[3, 0, 1, 2] for _ in range(query_pose.shape[1])]
-            for _ in range(query_pose.shape[0])
-        ]
-    ).cuda()
-
-    re_index = torch.tensor(
-        [
-            [[1, 2, 3, 0] for _ in range(query_pose.shape[1])]
-            for _ in range(query_pose.shape[0])
-        ]
-    ).cuda()
     query_pos = query_pose[:, :, :3]
     query_rot = query_pose[:, :, 3:]
     delta_pos = query_pos - target_pose[:, :, :3]
     delta_rot = query_rot - target_pose[:, :, 3:]
 
+    # index_query = torch.tensor(
+    #     [
+    #         [[3, 0, 1, 2] for _ in range(query_pose.shape[1])]
+    #         for _ in range(query_pose.shape[0])
+    #     ]
+    # ).cuda()
+    #
+    # re_index = torch.tensor(
+    #     [
+    #         [[1, 2, 3, 0] for _ in range(query_pose.shape[1])]
+    #         for _ in range(query_pose.shape[0])
+    #     ]
+    # ).cuda()
     # delta_rot = p3dtrans.quaternion_multiply(
     #     F.normalize(query_rot, p=2, dim=2).gather(2, index_query),
     #     F.normalize(

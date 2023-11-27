@@ -200,8 +200,8 @@ def make_dataloader(params, project_params):
     np.save("./train_poses.npy", train_poses)
     np.save("./test_poses.npy", test_poses)
 
-    train_embeddings = np.load("./embeddings/gnn_pre_train_embeddings.npy")
-    test_embeddings = np.load("./embeddings/gnn_pre_test_embeddings.npy")
+    train_embeddings = np.load("/home/david/Code/S3E-Base/train_gnn/embeddings/gnn_pre_train_embeddings.npy")
+    test_embeddings = np.load("/home/david/Code/S3E-Base/train_gnn/embeddings/gnn_pre_test_embeddings.npy")
 
     database_len = len(test_embeddings) // 2 if len(test_embeddings) < 4000 else 3000
     database_embeddings = test_embeddings[:database_len]

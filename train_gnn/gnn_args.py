@@ -94,11 +94,11 @@ def ap_embeddings(mink_model, params, project_args):
         get_embeddings_3d(mink_model, params, project_args, "cuda", "train")
     )
     print(embs.shape)
-    np.save("./embeddings/gnn_pre_train_embeddings.npy", embs)
+    np.save("/home/david/Code/S3E-Base/train_gnn/embeddings/gnn_pre_train_embeddings.npy", embs)
     test_embs = np.array(
         get_embeddings_3d(mink_model, params, project_args, "cuda", "test")
     )
-    np.save("./embeddings/gnn_pre_test_embeddings.npy", test_embs)
+    np.save("/home/david/Code/S3E-Base/train_gnn/embeddings/gnn_pre_test_embeddings.npy", test_embs)
 
 
 def resnet_embeddings(resnet_model, params, project_args):

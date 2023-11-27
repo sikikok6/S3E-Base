@@ -74,12 +74,11 @@ def get_gt(project_args):
 
 
 def get_embeddings(project_args):
-    embs = np.load("./embeddings/gnn_pre_train_embeddings.npy")
+    embs = np.load("/home/david/Code/S3E-Base/train_gnn/embeddings/gnn_pre_train_embeddings.npy")
     pose_embs = get_poses("train", project_args)
 
-    test_embs = np.load("./embeddings/gnn_pre_test_embeddings.npy")
+    test_embs = np.load("/home/david/Code/S3E-Base/train_gnn/embeddings/gnn_pre_test_embeddings.npy")
     test_pose_embs = get_poses("test", project_args)
-    database_len = len(test_embs) // 2 if len(test_embs) < 4000 else 3000
     database_embs = torch.tensor(test_embs.copy())
     query_embs = torch.tensor(test_embs.copy())
 
