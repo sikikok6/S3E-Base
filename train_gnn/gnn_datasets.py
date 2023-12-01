@@ -148,7 +148,7 @@ def make_smoothap_collate_fn(
             torch.stack((dst, src)).unsqueeze(0).repeat((images.shape[0], 1, 1))
         )
 
-        return (images, edge_index, poses)
+        return (labels, images, edge_index, poses)
 
         # return torch.tensor(positives_masks)[valid_mask], torch.tensor(negatives_masks)[valid_mask], torch.tensor(hard_positives_masks)[valid_mask], torch.tensor(labels)[valid_mask], torch.tensor(neighbours)[valid_mask], torch.tensor(most_positives_masks)[valid_mask], None
 

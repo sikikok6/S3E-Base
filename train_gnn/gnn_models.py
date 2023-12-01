@@ -46,7 +46,7 @@ class myGNN(nn.Module):
         self.conv_feat_2 = SAGEConv(2048, 1024, "mean")
         # self.resnet = resnet18(True)
         self.resnet = torch.hub.load(
-            "pytorch/vision:v0.10.0", "resnet18", pretrained=True
+            "pytorch/vision:v0.10.0", "resnet34", pretrained=True
         )
 
         self.mlp2 = nn.Sequential(
@@ -69,15 +69,8 @@ class myGNN(nn.Module):
 
         self.Encoder = nn.Sequential(nn.Linear(1024, 2048), nn.ReLU())
 
-        self.TransDecoder = nn.Sequential(
-            nn.Linear(1024, 3)
-            # nn.Tanh()
-        )
-
-        self.OriDecoder = nn.Sequential(
-            nn.Linear(1024, 4)
-            # nn.Tanh()
-        )
+        self.TransDecoder = nn.Sequential(nn.Linear(1024, 3))
+        self.OriDecoder = nn.Sequential(nn.Linear(1024, 3))
 
         self.EdgePose = nn.Sequential(nn.Linear(2048, 7))
         self.EdgeTransDecoder = nn.Sequential(nn.Linear(2048, 3))
@@ -112,8 +105,6 @@ class myGNN(nn.Module):
                 for _ in range(delta_pose.shape[0])
             ]
         ).cuda()
-        # ori_pos = ori_pose[:, :3].unsqueeze(1)
-        # ori_rot = ori_pose[:, 3:].unsqueeze(1)
         ori_pos = ori_pose[:, :, :3]
         ori_rot = ori_pose[:, :, 3:]
         delta_pos = delta_pose[:, :, :3] + ori_pos
@@ -132,50 +123,23 @@ class myGNN(nn.Module):
         x = self.resnet(x)
         batch_size = len(x) // 8
         x = self.mlp2(x.view((-1, 1000)))
-        # with g_fc.local_scope():
-        #     g_fc.ndata["x"] = x
-        #     g_fc.apply_edges(self.edge_score)
-        #     e = g_fc.edata["score"]
+        with g_fc.local_scope():
+            g_fc.ndata["x"] = x
+            g_fc.apply_edges(self.edge_score)
+            e = g_fc.edata["score"]
 
-        A_feat = self.conv_feat_1(g_fc, x)
-        A_feat = self.conv_feat_2(g_fc, A_feat).view((batch_size, 8, -1))
+        A_feat = self.conv_feat_1(g_fc, x, e)
+        A_feat = self.conv_feat_2(g_fc, A_feat, e).view((batch_size, 8, -1))
 
-        # x = self.Encoder(torch.cat((A_feat, A_pose), dim=2).view((-1, 1024)))
-        # x = self.Encoder(A_feat.view((-1, 1024)))
-        # x = self.BN(x)
-
-        # e_g = e.view((batch_size, -1, 1))[:, 1:11].reshape((-1, 1))
-        # A = self.conv1(g_fc, x)
-        # .view((batch_size, 11, -1))
-        # A = self.conv1(g, x)
-
-        # A = F.leaky_relu(A)
-        # est_pose = self.Decoder(A[:, 0]).unsqueeze(1)
-        # pos_out = self.TransDecoder(A).view((batch_size, 11, -1))
-        # ori_out = self.OriDecoder(A).view((batch_size, 11, -1))
         A = F.dropout(A_feat)
+
+        pos_out = self.TransDecoder(A.view(-1, 1024)).view((batch_size, 8, -1))
+        ori_out = self.OriDecoder(A.view(-1, 1024)).view((batch_size, 8, -1))
 
         with g_fc.local_scope():
             g_fc.ndata["x"] = A.view((-1, 1024))
             g_fc.apply_edges(self.edge_pose)
             deltaPose = g_fc.edata["pose"]
 
-        # q2r = self.pose_multipy(est_pose[:, 0], deltaPose.view((batch_size, 10, -1)))
-
-        # q2r = self.pose_multipy(
-        #     torch.cat((pos_out, ori_out), dim=2)[:, 1:],
-        #     # x_pose[:, 0],
-        #     deltaPose.view((batch_size, 10, -1)),
-        # )
-
-        # est_pose = A[0, 512:]
-
-        # pos_out = est_pose[:, :, :3]
-        # ori_out = est_pose[:, :, 3:]
-
-        # A = A[:, :512]
-
         A = F.normalize(A, dim=1).view((batch_size, 8, -1))
-        # pred2, A2 = self.conv2(g, pred)
-        # return A, pos_out.view((-1, 3)), ori_out.view((-1, 4)), deltaPose
-        return A, deltaPose
+        return A, deltaPose, torch.cat((pos_out, ori_out), dim=2), e
