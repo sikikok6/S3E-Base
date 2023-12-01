@@ -128,9 +128,9 @@ class myGNN(nn.Module):
             if "Decoder" not in name or "EdgePose" not in name:
                 param.requires_grad = False
 
-    def forward(self, g_fc, g, x):
+    def forward(self, g_fc, x):
         x = self.resnet(x)
-        batch_size = len(x) // 11
+        batch_size = len(x) // 8
         x = self.mlp2(x.view((-1, 1000)))
         # with g_fc.local_scope():
         #     g_fc.ndata["x"] = x
@@ -138,7 +138,7 @@ class myGNN(nn.Module):
         #     e = g_fc.edata["score"]
 
         A_feat = self.conv_feat_1(g_fc, x)
-        A_feat = self.conv_feat_2(g_fc, A_feat).view((batch_size, 11, -1))
+        A_feat = self.conv_feat_2(g_fc, A_feat).view((batch_size, 8, -1))
 
         # x = self.Encoder(torch.cat((A_feat, A_pose), dim=2).view((-1, 1024)))
         # x = self.Encoder(A_feat.view((-1, 1024)))
@@ -175,7 +175,7 @@ class myGNN(nn.Module):
 
         # A = A[:, :512]
 
-        A = F.normalize(A, dim=1).view((batch_size, 11, -1))
+        A = F.normalize(A, dim=1).view((batch_size, 8, -1))
         # pred2, A2 = self.conv2(g, pred)
         # return A, pos_out.view((-1, 3)), ori_out.view((-1, 4)), deltaPose
         return A, deltaPose

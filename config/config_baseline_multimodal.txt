@@ -9,7 +9,7 @@ image_path = /home/david/datasets/fire/color
 
 
 [TRAIN]
-num_workers = 1
+num_workers = 8
 batch_size = 32
 val_batch_size = 8
 batch_size_limit = 32
@@ -30,4 +30,4 @@ normalize_embeddings = True
 margin = 0.2
 
 train_file = pickle/fire_train_overlap.pickle
-# val_file = pickle/test_dist.pickle
+val_file = pickle/fire_test_overlap.pickle

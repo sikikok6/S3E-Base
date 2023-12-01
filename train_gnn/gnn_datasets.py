@@ -100,7 +100,7 @@ def make_smoothap_collate_fn(
         global query_sim_mat
         global train_pose
         global test_pose
-        num = 10
+        num = 7
         images = []
         poses = []
 
@@ -111,7 +111,9 @@ def make_smoothap_collate_fn(
                 labels[i].extend(train_sim_mat[labels[i][0]][1 : num + 1])
                 images.append(torch.stack([dataset[e][0]["image"] for e in labels[i]]))
                 poses.append(
-                    torch.stack([torch.tensor(train_pose[e]) for e in labels[i]])
+                    torch.stack(
+                        [torch.tensor(dataset[e][0]["pose"]) for e in labels[i]]
+                    )
                 )
         else:
             for i in range(len(labels)):
@@ -121,13 +123,32 @@ def make_smoothap_collate_fn(
                 )
                 images[i][0] = dataset[labels[i][0]][0]["image"]
                 poses.append(
-                    torch.stack([torch.tensor(train_pose[e]) for e in labels[i]])
+                    torch.stack(
+                        [torch.tensor(train_dataset[e][0]["pose"]) for e in labels[i]]
+                    )
                 )
-                poses[i][0] = torch.tensor(test_pose[labels[i][0]])
+                poses[i][0] = torch.tensor(dataset[labels[i][0]][0]["pose"])
         images = torch.stack(images)
         poses = torch.stack(poses)
 
-        return (torch.tensor(labels), images, poses)
+        node = torch.tensor(list(range(num + 1)))
+
+        src = (
+            torch.repeat_interleave(node.unsqueeze(0), num + 1, 0)
+            .view((1, -1))
+            .squeeze()
+        )
+
+        dst = torch.repeat_interleave(node, num + 1)
+
+        valid = src != dst
+        src = src[valid]
+        dst = dst[valid]
+        edge_index = (
+            torch.stack((dst, src)).unsqueeze(0).repeat((images.shape[0], 1, 1))
+        )
+
+        return (images, edge_index, poses)
 
         # return torch.tensor(positives_masks)[valid_mask], torch.tensor(negatives_masks)[valid_mask], torch.tensor(hard_positives_masks)[valid_mask], torch.tensor(labels)[valid_mask], torch.tensor(neighbours)[valid_mask], torch.tensor(most_positives_masks)[valid_mask], None
 
@@ -150,10 +171,10 @@ def make_dataloader(params, project_params):
     np.save("./test_poses.npy", test_pose)
 
     train_embeddings = np.load(
-        "/home/david/Code/S3E-Base/train_gnn/embeddings/gnn_resnet_train_embeddings.npy"
+        "/home/david/Code/S3E-Base/train_gnn/embeddings/gnn_pre_train_embeddings.npy"
     )
     test_embeddings = np.load(
-        "/home/david/Code/S3E-Base/train_gnn/embeddings/gnn_resnet_test_embeddings.npy"
+        "/home/david/Code/S3E-Base/train_gnn/embeddings/gnn_pre_test_embeddings.npy"
     )
 
     database_len = len(test_embeddings) // 2 if len(test_embeddings) < 4000 else 3000
@@ -190,9 +211,20 @@ def make_dataloader(params, project_params):
     # database_sim_mat = train_sim_mat.copy()
 
     datasets["train"] = ScanNetDataset(
-        dataset_folder, train_file, train_transform, set_transform=train_set_transform
+        dataset_folder,
+        train_file,
+        train_transform,
+        set_transform=train_set_transform,
+        pt_path="/home/david/datasets/7scenes-rw/fire_fc8_sp5_train/processed/",
+        pose_path="/home/david/datasets/fire/train/pose",
     )
-    datasets["val"] = ScanNetDataset(dataset_folder, test_file, None)
+    datasets["val"] = ScanNetDataset(
+        dataset_folder,
+        test_file,
+        None,
+        pt_path="/home/david/datasets/7scenes-rw/fire_fc8_sp5_test/processed/",
+        pose_path="/home/david/datasets/fire/test/pose",
+    )
 
     val_transform = None
 
@@ -200,6 +232,7 @@ def make_dataloader(params, project_params):
     train_sampler = BatchSampler(datasets["train"], batch_size=8, type="train")
     # Collate function collates items into a batch and applies a 'set transform' on the entire batch
     train_collate_fn = make_smoothap_collate_fn(datasets["train"], None, 0.01)
+    # train_collate_fn = make_collate_fn()
     dataloaders["train"] = DataLoader(
         datasets["train"],
         batch_sampler=train_sampler,
@@ -215,6 +248,7 @@ def make_dataloader(params, project_params):
         val_collate_fn = make_smoothap_collate_fn(
             datasets["val"], datasets["train"], 0.01, "val"
         )
+        # val_collate_fn = make_collate_fn()
         dataloaders["val"] = DataLoader(
             datasets["val"],
             batch_sampler=val_sampler,

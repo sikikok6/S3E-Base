@@ -78,7 +78,7 @@ cos = nn.CosineSimilarity(dim=2).cuda()
 
 
 max_ = 0.0
-node_nums = 10
+node_nums = 8
 # labels = range(len(feat))
 with tqdm.tqdm(range(200), position=0, desc="epoch", ncols=60) as tbar:
     for epoch in tbar:
@@ -100,36 +100,13 @@ with tqdm.tqdm(range(200), position=0, desc="epoch", ncols=60) as tbar:
         with tqdm.tqdm(
             dataloaders["train"], position=1, desc="batch", ncols=60
         ) as tbar2:
-            src = np.array(list(range(1, node_nums + 1)))
-            dst = np.repeat(list(range(1)), node_nums)
+            # for images, edge_index, edge_attr, y in tbar2:
+            for images, edge_index, y in tbar2:
+                src = edge_index[0, 1]
+                dst = edge_index[0, 0]
 
-            g = dgl.graph((src, dst))
-            g = g.to("cuda")
-
-            node = torch.tensor(list(range(node_nums + 1)))
-
-            src = (
-                torch.repeat_interleave(node.unsqueeze(0), node_nums + 1, 0)
-                .view((1, -1))
-                .squeeze()
-            )
-
-            dst = torch.repeat_interleave(node, node_nums + 1)
-
-            valid = src != dst
-            src = src[valid]
-            dst = dst[valid]
-
-            g_fc = dgl.graph((src, dst))
-            g_fc = g_fc.to("cuda")
-
-            for (
-                labels,
-                images,
-                poses,
-            ) in tbar2:
-                g_arr = [g] * len(images)
-                g_batch = dgl.batch(g_arr)
+                g_fc = dgl.graph((src, dst))
+                g_fc = g_fc.to("cuda")
 
                 g_fc_arr = [g_fc] * len(images)
                 g_fc_batch = dgl.batch(g_fc_arr)
@@ -138,31 +115,24 @@ with tqdm.tqdm(range(200), position=0, desc="epoch", ncols=60) as tbar:
                 model.train()
 
                 with torch.enable_grad():
-                    # if epoch > 40:
-                    #     model.freeze_except_decoder()
-                    ind = labels.clone().detach()
-
-                    indx = ind[..., dst]
-                    indy = ind[..., src]
-
                     A, deltaPose = model(
-                        g_fc_batch, g_batch, images.view((-1, 3, 240, 320)).cuda()
+                        g_fc_batch, images.view((-1, 3, 240, 320)).cuda()
                     )
 
                     # calculate poss loss
 
-                    # gt_neighbour_pose = pose_embs[indy]
-                    # gt_query_pose = pose_embs[indx]
-
-                    poses = poses.cuda()
-                    gt_neighbour_pose = poses[:, src]
-                    gt_query_pose = poses[:, dst]
+                    poses = y.cuda()
+                    gt_neighbour_pose = poses[:, src].view((images.shape[0], -1, 6))
+                    gt_query_pose = poses[:, dst].view((images.shape[0], -1, 6))
 
                     gt_delta_pose = pose_delta(gt_neighbour_pose, gt_query_pose).view(
                         (-1, 6)
                     )
+
                     gt_delta_pose_trans = gt_delta_pose[:, :3]
                     gt_delta_pose_ori = gt_delta_pose[:, 3:]
+                    # target_x = edge_attr.view((-1, 6))[:, :3].cuda()
+                    # target_q = edge_attr.view((-1, 6))[:, 3:].cuda()
 
                     deltaPose_trans = deltaPose[:, :3]
                     deltaPose_ori = deltaPose[:, 3:]
@@ -172,24 +142,10 @@ with tqdm.tqdm(range(200), position=0, desc="epoch", ncols=60) as tbar:
                         deltaPose_ori,
                         gt_delta_pose_trans,
                         gt_delta_pose_ori,
+                        # target_x,
+                        # target_q,
                     )
-                    q_valid = dst == 0
-
-                    gt_neighbour_pose = poses[:, src[q_valid]]
-                    gt_query_pose = poses[:, dst[q_valid]]
-
-                    gt_delta_pose = pose_delta(gt_neighbour_pose, gt_query_pose).view(
-                        (-1, 6)
-                    )
-
-                    deltaPose = (
-                        deltaPose.view((labels.shape[0], -1, deltaPose.shape[-1]))[
-                            :, :10
-                        ]
-                        .contiguous()
-                        .view((-1, 6))
-                    )
-                    # print(deltaPose.shape)
+                    q_valid = edge_index[:, 0] == 0
 
                     train_loss_pos = loss_pos
                     # Here have beta
@@ -198,6 +154,18 @@ with tqdm.tqdm(range(200), position=0, desc="epoch", ncols=60) as tbar:
                     # batch_loss = alpha * train_loss_mse1 + gamma * (
                     batch_loss = loss_pose_delta
                     # loss_pose + loss_pose_q2r
+
+                    deltaPose = (
+                        deltaPose.view((images.shape[0], 56, 6))[q_valid]
+                        .view((images.shape[0], -1, 6))
+                        .view((-1, 6))
+                    )
+
+                    gt_delta_pose = (
+                        gt_delta_pose.view((images.shape[0], 56, 6))[q_valid]
+                        .view((images.shape[0], -1, 6))
+                        .view((-1, 6))
+                    )
 
                     trans_error, rot_error = cal_trans_rot_error(
                         deltaPose.detach().cpu().numpy(),
@@ -268,63 +236,45 @@ with tqdm.tqdm(range(200), position=0, desc="epoch", ncols=60) as tbar:
                 trans_loss = 0
                 rotation_loss = 0
 
-                src = np.array(list(range(1, node_nums + 1)))
-                dst = np.repeat(list(range(1)), node_nums)
-
-                g = dgl.graph((src, dst))
-                g = g.to("cuda")
-
-                src = (
-                    torch.repeat_interleave(node.unsqueeze(0), node_nums + 1, 0)
-                    .view((1, -1))
-                    .squeeze()
-                )
-
-                dst = torch.repeat_interleave(node, node_nums + 1)
-                valid = src != dst
-                src = src[valid]
-                dst = dst[valid]
-                trans_errors = []
-                rot_errors = []
-
-                g_fc = dgl.graph((src, dst))
-                g_fc = g_fc.to("cuda")
                 with tqdm.tqdm(
                     dataloaders["val"], position=1, desc="batch", ncols=60
                 ) as tbar3:
-                    for labels, images, poses in tbar3:
-                        if len(labels) == 0:
-                            continue
+                    for images, edge_index, y in tbar3:
+                        # for images, edge_index, edge_attr, y in tbar3:
+                        src = edge_index[0, 1]
+                        dst = edge_index[0, 0]
 
-                        g_arr = [g] * len(images)
-                        g_batch = dgl.batch(g_arr)
+                        g_fc = dgl.graph((src, dst))
+                        g_fc = g_fc.to("cuda")
 
                         g_fc_arr = [g_fc] * len(images)
                         g_fc_batch = dgl.batch(g_fc_arr)
 
-                        ind = labels.clone().detach()
-                        # ind = labels
-
                         A, deltaPose = model(
-                            g_fc_batch, g_batch, images.view((-1, 3, 240, 320)).cuda()
+                            g_fc_batch, images.view((-1, 3, 240, 320)).cuda()
                         )
 
                         """Pose Loss Cal"""
 
                         # calculate poss loss
-                        poses = poses.cuda()
-                        q_valid = dst == 0
-                        test_gt_neighbour_pose = poses[:, src[q_valid]]
-                        test_gt_query_pose = poses[:, dst[q_valid]]
-                        gt_delta_pose = pose_delta(
-                            test_gt_neighbour_pose, test_gt_query_pose
-                        ).view((-1, 6))
+                        poses = y.cuda()
+                        q_valid = edge_index[:, 0] == 0
 
                         deltaPose = (
-                            deltaPose.view((labels.shape[0], -1, deltaPose.shape[-1]))[
-                                :, :10
-                            ]
-                            .contiguous()
+                            deltaPose.view((8, 56, 6))[q_valid]
+                            .view((8, -1, 6))
+                            .view((-1, 6))
+                        )
+                        gt_neighbour_pose = poses[:, src].view((images.shape[0], -1, 6))
+                        gt_query_pose = poses[:, dst].view((images.shape[0], -1, 6))
+
+                        gt_delta_pose = pose_delta(
+                            gt_neighbour_pose, gt_query_pose
+                        ).view((-1, 6))
+
+                        gt_delta_pose = (
+                            gt_delta_pose.view((images.shape[0], 56, 6))[q_valid]
+                            .view((images.shape[0], -1, 6))
                             .view((-1, 6))
                         )
 
@@ -335,8 +285,6 @@ with tqdm.tqdm(range(200), position=0, desc="epoch", ncols=60) as tbar:
 
                         trans_loss += trans_error
                         rotation_loss += rot_error
-                        trans_errors.append(trans_error)
-                        rot_errors.append(rot_error)
 
                     evanums = tbar3.n
                     # t_loss = t_loss.detach().cpu().numpy()

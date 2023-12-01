@@ -14,6 +14,7 @@ import random
 from typing import Dict
 import torchvision.transforms as transforms
 from scipy.linalg import expm, norm
+from train_gnn.gnn_utils import process_poses_eular
 
 from datasets.augmentation import ValRGBTransform
 
@@ -29,12 +30,14 @@ class ScanNetDataset(Dataset):
         self,
         dataset_path: str,
         query_filename: str,
-        image_path: str = None,
-        lidar2image_ndx_path: str = None,
         transform=None,
         set_transform=None,
         image_transform=None,
         use_cloud: bool = True,
+        image_path: str = None,
+        pt_path: str = None,
+        lidar2image_ndx_path: str = None,
+        pose_path: str = None,
     ):
         assert os.path.exists(dataset_path), "Cannot access dataset path: {}".format(
             dataset_path
@@ -62,6 +65,15 @@ class ScanNetDataset(Dataset):
         # assert os.path.exists(self.lidar2image_ndx_path), f"Cannot access lidar2image_ndx: {self.lidar2image_ndx_path}"
         # self.lidar2image_ndx = pickle.load(open(self.lidar2image_ndx_path, 'rb'))
         self.lidar2image_ndx = {}
+        self.pt_path = pt_path
+        self.pose_path = pose_path
+
+        self.pose = os.listdir(self.pose_path)
+        self.pose.sort()
+
+        self.query = os.listdir(self.pt_path)
+        self.query.sort()
+
         for i in range(len(self)):
             self.lidar2image_ndx[i] = [i]
 
@@ -77,6 +89,9 @@ class ScanNetDataset(Dataset):
         # return len(self.queries) if 'test' not in self.query_filepath else 2000
 
     def __getitem__(self, ndx):
+        # data = torch.load(os.path.join(self.pt_path, self.query[ndx]))
+        # return data
+
         # Load point cloud and apply transform
         filename = self.queries[ndx].rel_scan_filepath
         # print(f"scannetdataset_filename: {filename}")
@@ -89,12 +104,16 @@ class ScanNetDataset(Dataset):
         #         query_pc = self.transform(query_pc)
         #     result['cloud'] = query_pc
 
+        pose = np.loadtxt(os.path.join(self.pose_path, self.pose[ndx]))
+        # trans pose to 3 + 4
+        pose = process_poses_eular(pose)
+        result["pose"] = pose
         if self.image_path is not None:
             # img = image4lidar(filename, self.image_path,
             #                   self.image_ext, self.lidar2image_ndx, k=None)
             img = Image.open(
                 os.path.join(
-                    self.image_path, filename.split("/")[-1].replace("bin", "color.png")
+                    self.image_path, self.pose[ndx].replace("pose.txt", "color.png")
                 )
             )
             # if self.image_transform is not None:
